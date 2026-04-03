@@ -4,7 +4,7 @@ from typing import Optional
 class ContextEnhancer:
     """Enhances prompts with project context and coding patterns."""
 
-    def __init__(self, project_context: Optional[ProjectContext] = None):
+    def __init__(self, project_context: Optional[ProjectContext] = None) -> None:
         """Initialize enhancer with optional project context.
 
         Args:
@@ -31,72 +31,37 @@ class ContextEnhancer:
 - Consider existing dependencies and frameworks
 """
 
-    def enhance_generate_prompt(self, prompt: str) -> str:
-        """Enhance code generation prompt with context.
+    def _enhance_prompt(self, prompt: str, section: str) -> str:
+        """Internal method to enhance prompt with context.
 
         Args:
-            prompt: Original generation prompt
+            prompt: Original prompt
+            section: Section header for the prompt (e.g., "Request", "Refactoring Request")
 
         Returns:
-            Enhanced prompt with project context
+            Enhanced prompt or original if no context
         """
         prefix = self.get_project_context_prefix()
         if prefix:
-            return f"{prefix}\n## Request\n{prompt}"
+            return f"{prefix}\n## {section}\n{prompt}"
         return prompt
+
+    def enhance_generate_prompt(self, prompt: str) -> str:
+        """Enhance code generation prompt with context."""
+        return self._enhance_prompt(prompt, "Request")
 
     def enhance_refactor_prompt(self, prompt: str) -> str:
-        """Enhance refactoring prompt with context.
-
-        Args:
-            prompt: Original refactoring prompt
-
-        Returns:
-            Enhanced prompt with project context
-        """
-        prefix = self.get_project_context_prefix()
-        if prefix:
-            return f"{prefix}\n## Refactoring Request\n{prompt}"
-        return prompt
+        """Enhance refactoring prompt with context."""
+        return self._enhance_prompt(prompt, "Refactoring Request")
 
     def enhance_test_prompt(self, prompt: str) -> str:
-        """Enhance test generation prompt with context.
-
-        Args:
-            prompt: Original test prompt
-
-        Returns:
-            Enhanced prompt with project context
-        """
-        prefix = self.get_project_context_prefix()
-        if prefix:
-            return f"{prefix}\n## Test Request\n{prompt}"
-        return prompt
+        """Enhance test generation prompt with context."""
+        return self._enhance_prompt(prompt, "Test Request")
 
     def enhance_explain_prompt(self, prompt: str) -> str:
-        """Enhance code explanation prompt with context.
-
-        Args:
-            prompt: Original explanation prompt
-
-        Returns:
-            Enhanced prompt with project context
-        """
-        prefix = self.get_project_context_prefix()
-        if prefix:
-            return f"{prefix}\n## Explanation Request\n{prompt}"
-        return prompt
+        """Enhance code explanation prompt with context."""
+        return self._enhance_prompt(prompt, "Explanation Request")
 
     def enhance_fix_prompt(self, prompt: str) -> str:
-        """Enhance bug fix prompt with context.
-
-        Args:
-            prompt: Original fix prompt
-
-        Returns:
-            Enhanced prompt with project context
-        """
-        prefix = self.get_project_context_prefix()
-        if prefix:
-            return f"{prefix}\n## Bug Fix Request\n{prompt}"
-        return prompt
+        """Enhance bug fix prompt with context."""
+        return self._enhance_prompt(prompt, "Bug Fix Request")
