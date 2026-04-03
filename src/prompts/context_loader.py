@@ -3,6 +3,10 @@ from pathlib import Path
 from typing import Optional, List
 import json
 
+# Configuration constants
+MAX_README_CHARS = 1000
+MAX_TREE_LINES = 50
+
 @dataclass
 class ProjectContext:
     """Represents project metadata and structure."""
@@ -63,13 +67,24 @@ def read_readme(project_root: Path) -> Optional[str]:
         readme_path = project_root / readme_name
         if readme_path.exists():
             try:
-                return readme_path.read_text(encoding="utf-8")[:1000]
+                return readme_path.read_text(encoding="utf-8")[:MAX_README_CHARS]
             except Exception:
                 pass
     return None
 
 def read_package_info(project_root: Path, project_type: str) -> Optional[dict]:
-    """Read package metadata based on project type."""
+    """Read package metadata based on project type.
+
+    Args:
+        project_root: Root directory path
+        project_type: Project type ('python', 'node', etc.)
+
+    Returns:
+        Dictionary with package metadata (structure varies by type),
+        or None if file not found or parse fails.
+        For Python: parsed pyproject.toml content.
+        For Node: parsed package.json content.
+    """
     if project_type == "python":
         pyproject = project_root / "pyproject.toml"
         if pyproject.exists():
@@ -88,7 +103,17 @@ def read_package_info(project_root: Path, project_type: str) -> Optional[dict]:
     return None
 
 def generate_file_tree(project_root: Path, max_depth: int = 3, current_depth: int = 0, prefix: str = "") -> str:
-    """Generate a simple file tree string."""
+    """Generate a simple file tree string.
+
+    Args:
+        project_root: Root directory path
+        max_depth: Maximum depth to traverse (default: 3)
+        current_depth: Current recursion depth (internal use)
+        prefix: Tree prefix for formatting (internal use)
+
+    Returns:
+        Formatted file tree string (limited to MAX_TREE_LINES lines)
+    """
     if current_depth >= max_depth:
         return ""
 
@@ -114,7 +139,7 @@ def generate_file_tree(project_root: Path, max_depth: int = 3, current_depth: in
         else:
             tree_lines.append(f"{prefix}├── {item.name}")
 
-    return "\n".join(tree_lines[:50])
+    return "\n".join(tree_lines[:MAX_TREE_LINES])
 
 def load_project_context(project_root: Path) -> ProjectContext:
     """Load complete project context."""
