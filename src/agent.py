@@ -1,10 +1,13 @@
 import asyncio
 import os
+from pathlib import Path
 from typing import Optional, List
 from src.auth.bedrock_auth import build_bedrock_runtime, invoke_bedrock
 from src.models.request import BedrockRequest, GenerateRequest
 from src.models.response import BedrockResponse, GenerateResponse
 from src.utils.logger import get_logger
+from src.prompts.context_loader import ProjectContext, load_project_context
+from src.prompts.context_enhancer import ContextEnhancer
 
 logger = get_logger(__name__)
 
@@ -36,6 +39,7 @@ class JmAgent:
         region: str = "us-east-1",
         temperature: float = 0.2,
         max_tokens: int = 4096,
+        project_context: Optional[ProjectContext] = None,
     ):
         """
         Initialize JmAgent.
@@ -45,6 +49,7 @@ class JmAgent:
             region: AWS region
             temperature: Sampling temperature (0.0-1.0)
             max_tokens: Maximum output tokens
+            project_context: Optional project context for improved code generation
         """
         self.model = model
         self.model_id = MODELS.get(model, MODELS["haiku"])
@@ -53,6 +58,7 @@ class JmAgent:
         self.max_tokens = max_tokens
         self.client = build_bedrock_runtime(region)
         self.conversation_history: List[dict] = []
+        self.project_context = project_context
 
         logger.info(f"Initialized JmAgent with model: {self.model}")
 
@@ -73,6 +79,20 @@ class JmAgent:
         Returns:
             BedrockResponse
         """
+        # Enhance prompt with project context if available
+        if self.project_context:
+            enhancer = ContextEnhancer(self.project_context)
+            if action == "generate":
+                prompt = enhancer.enhance_generate_prompt(prompt)
+            elif action == "refactor":
+                prompt = enhancer.enhance_refactor_prompt(prompt)
+            elif action == "test":
+                prompt = enhancer.enhance_test_prompt(prompt)
+            elif action == "explain":
+                prompt = enhancer.enhance_explain_prompt(prompt)
+            elif action == "fix":
+                prompt = enhancer.enhance_fix_prompt(prompt)
+
         system_prompt = SYSTEM_PROMPTS.get(action, SYSTEM_PROMPTS["chat"])
 
         messages = self.conversation_history.copy() if use_history else []
