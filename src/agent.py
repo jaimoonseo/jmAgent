@@ -1,4 +1,5 @@
 import asyncio
+import os
 from typing import Optional, List
 from src.auth.bedrock_auth import build_bedrock_runtime, invoke_bedrock
 from src.models.request import BedrockRequest, GenerateRequest
@@ -7,11 +8,11 @@ from src.utils.logger import get_logger
 
 logger = get_logger(__name__)
 
-# Model ID mappings
+# Model ID mappings - Supports both inference profiles and on-demand models
 MODELS = {
-    "haiku": "anthropic.claude-haiku-4-5-20251001-v1:0",
-    "sonnet": "anthropic.claude-sonnet-4-6-20250514-v1:0",
-    "opus": "anthropic.claude-opus-4-6-20250514-v1:0",
+    "haiku": os.getenv("AWS_BEDROCK_MODEL_ID", "us.anthropic.claude-haiku-4-5-20251001-v1:0"),
+    "sonnet": "us.anthropic.claude-sonnet-4-6-20250514-v1:0",
+    "opus": "us.anthropic.claude-opus-4-6-20250514-v1:0",
 }
 
 # System prompts for each action

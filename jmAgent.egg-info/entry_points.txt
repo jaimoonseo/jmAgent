@@ -1,0 +1,2 @@
+[console_scripts]
+jm = src.cli:main

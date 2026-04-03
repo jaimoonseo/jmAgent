@@ -2,6 +2,7 @@ import argparse
 import asyncio
 import sys
 from typing import Optional
+from dotenv import load_dotenv
 from src.agent import JmAgent
 from src.utils.logger import get_logger
 
@@ -278,6 +279,7 @@ async def main_async(args) -> None:
 
 def main() -> None:
     """Entry point."""
+    load_dotenv()
     parser = create_parser()
     args = parser.parse_args()
 

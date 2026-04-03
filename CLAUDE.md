@@ -1,0 +1,133 @@
+# CLAUDE.md
+
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
+## Project Status
+
+**jmAgent** is a personal Claude coding assistant using AWS Bedrock (Haiku 4.5). The project is in the **planning phase** (Phase 1: Foundation). See `PLAN.md` for the complete design.
+
+## Architecture Overview
+
+The project follows a modular architecture with clear separation of concerns:
+
+- **`src/auth/bedrock_auth.py`** - AWS Bedrock authentication (API Key or IAM), reusing patterns from FeedOPS
+- **`src/agent.py`** - Core `JmAgent` class with async methods for code generation, refactoring, testing, explanation, bug fixing, and chat
+- **`src/cli.py`** - argparse-based CLI entry point
+- **`src/prompts/`** - System prompts and action-specific templates
+- **`src/actions/`** - Individual action modules (generate, refactor, test, explain, fix)
+- **`src/models/`** - Request/response data classes
+- **`src/utils/`** - Token counting, code formatting, file handling, logging
+
+The JmAgent is designed to be language/framework-agnostic, supporting Python, TypeScript/JavaScript, SQL, Bash, and more.
+
+## Key Design Decisions
+
+1. **Authentication Flexibility** - Auto-detect between API Key (ABSK) and IAM credentials (from FeedOPS patterns)
+2. **Conversation History as List** - Manage multi-turn conversations using message lists
+3. **Temperature: 0.2** - Consistency over creativity for code generation
+4. **Max Tokens: 4096** - Default output limit; configurable per action
+5. **Model Selection** - Haiku 4.5 (default/fast), Sonnet 4.6 (balanced), Opus 4.6 (high-quality)
+6. **Async Methods** - All agent methods are async for non-blocking I/O
+
+## Common Development Commands
+
+Once Phase 1 is complete, these commands will be available:
+
+```bash
+# Virtual environment setup
+python3.10+ -m venv venv && source venv/bin/activate
+
+# Install dependencies
+pip install boto3 python-dotenv
+
+# Test authentication
+python src/auth/bedrock_auth.py
+
+# Run unit tests (after tests are written)
+python -m pytest tests/
+
+# Run single test
+python -m pytest tests/test_agent.py::TestJmAgent::test_generate
+
+# Run CLI
+python src/cli.py generate --prompt "FastAPI GET endpoint"
+python src/cli.py refactor --file src/main.py --requirements "add type hints"
+python src/cli.py test --file src/utils.py --framework pytest
+python src/cli.py explain --file src/complex.py
+python src/cli.py fix --file src/app.py --error "TypeError: 'NoneType'..."
+python src/cli.py chat  # Interactive mode
+
+# Optional: Install CLI alias
+alias jm='python ~/Documents/jmAgent/src/cli.py'
+```
+
+## Implementation Roadmap
+
+### Phase 1: Foundation (Current)
+- [ ] `bedrock_auth.py` - FeedOPS-based authentication
+- [ ] `agent.py` - JmAgent class with core methods
+- [ ] `cli.py` - argparse CLI entry point
+- **Output**: Basic code generation working
+
+### Phase 2: Prompts & Templates
+- [ ] System prompts and action templates
+- [ ] Project context loader
+- [ ] Token counter utility
+- **Output**: High-quality code generation
+
+### Phase 3: Advanced Features
+- [ ] Multi-file context support
+- [ ] Interactive chat mode with history
+- [ ] Streaming responses
+- [ ] Code auto-formatting
+- **Output**: Interactive development experience
+
+### Phase 4: Testing & Documentation
+- [ ] Unit tests
+- [ ] README and usage guide
+- [ ] Example scripts
+- [ ] Performance optimization
+
+## Configuration
+
+Environment variables (`.env` or system):
+
+```
+AWS_BEARER_TOKEN_BEDROCK=<ABSK-...>    # OR IAM credentials
+AWS_BEDROCK_REGION=us-east-1
+
+# Optional
+JM_DEFAULT_MODEL=haiku                  # haiku, sonnet, opus
+JM_TEMPERATURE=0.2
+JM_MAX_TOKENS=4096
+JM_PROJECT_ROOT=.
+```
+
+## FeedOPS Patterns to Reuse
+
+1. **Auth Detection** - `_detect_auth_mode()` checks for API Key or IAM
+2. **Client Creation** - `_build_bedrock_runtime()` with flexible auth
+3. **Model Invocation** - `invoke_model()` with Bedrock JSON format
+4. **Conversation Management** - List of message dicts with role/content
+5. **Token Estimation** - Pre-validate before API calls
+
+## Testing Strategy
+
+- Unit tests for auth, prompts, and utilities
+- Integration tests with mock Bedrock responses (optional: real Bedrock for CI)
+- CLI smoke tests for each action
+
+## Cost Optimization
+
+- Haiku 4.5: ~$0.01 per typical request
+- Token estimation to avoid unnecessary API calls
+- Prompt caching for repeated system prompts
+- User controls over model selection and max_tokens
+
+## Important Notes
+
+- This is a **personal project** independent of FeedOPS (no cross-dependencies)
+- All core methods in JmAgent should be **async**
+- File handling should use `src/utils/file_handler.py` for consistency
+- Prompts are crucial for quality—invest time in templates
+- Temperature of 0.2 prioritizes consistency; adjust for specific actions if needed
