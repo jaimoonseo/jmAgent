@@ -263,10 +263,21 @@ async def cmd_chat(args, agent: JmAgent) -> None:
 
 async def main_async(args) -> None:
     """Main async function."""
+    # Load project context if --project specified
+    project_context = None
+    if args.project:
+        try:
+            from src.prompts.context_loader import load_project_context
+            project_context = load_project_context(args.project)
+            logger.info(f"Loaded project context from {args.project}")
+        except Exception as e:
+            logger.warning(f"Could not load project context: {str(e)}")
+
     agent = JmAgent(
         model=args.model,
         temperature=args.temperature,
-        max_tokens=args.max_tokens
+        max_tokens=args.max_tokens,
+        project_context=project_context
     )
 
     if args.action == "generate":
