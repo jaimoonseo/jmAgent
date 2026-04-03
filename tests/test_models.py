@@ -11,7 +11,7 @@ def test_bedrock_request_to_body():
     )
     body = req.to_body()
 
-    assert body["anthropic_version"] == "bedrock-2023-06-01"
+    assert body["anthropic_version"] == "bedrock-2023-05-31"
     assert body["max_tokens"] == 1024
     assert body["system"] == "You are a helpful assistant."
     assert len(body["messages"]) == 1
