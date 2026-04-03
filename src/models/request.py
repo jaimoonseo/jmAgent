@@ -17,7 +17,7 @@ class BedrockRequest:
             messages.append({"role": "user", "content": self.user_message})
 
         return {
-            "anthropic_version": "bedrock-2023-06-01",
+            "anthropic_version": "bedrock-2023-05-31",
             "max_tokens": self.max_tokens,
             "system": self.system_prompt,
             "messages": messages
