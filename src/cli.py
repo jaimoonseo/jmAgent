@@ -1,5 +1,6 @@
 import argparse
 import asyncio
+import os
 import sys
 from typing import Optional
 from dotenv import load_dotenv
@@ -32,6 +33,12 @@ def create_parser() -> argparse.ArgumentParser:
         type=int,
         default=4096,
         help="Maximum output tokens (default: 4096)"
+    )
+    parser.add_argument(
+        "--project",
+        type=str,
+        default=None,
+        help="Project root directory for context analysis"
     )
 
     subparsers = parser.add_subparsers(dest="action", help="Action to perform")
@@ -280,7 +287,16 @@ async def main_async(args) -> None:
 def main() -> None:
     """Entry point."""
     load_dotenv()
+
+    # Check for JM_PROJECT_ROOT environment variable
+    default_project = os.getenv("JM_PROJECT_ROOT")
+
     parser = create_parser()
+
+    # If default_project exists, set it as default for --project
+    if default_project:
+        parser.set_defaults(project=default_project)
+
     args = parser.parse_args()
 
     if not args.action:
