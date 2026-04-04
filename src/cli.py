@@ -58,6 +58,11 @@ def create_parser() -> argparse.ArgumentParser:
         "--file",
         help="File path for context"
     )
+    gen_parser.add_argument(
+        "--stream",
+        action="store_true",
+        help="Stream output in real-time"
+    )
 
     # refactor command
     ref_parser = subparsers.add_parser("refactor", help="Refactor code")
@@ -143,15 +148,33 @@ async def cmd_generate(args, agent: JmAgent) -> None:
     else:
         prompt = args.prompt
 
-    logger.info("Generating code...")
-    result = await agent.generate(
-        prompt=prompt,
-        language=args.language
-    )
+    # Check if streaming is requested
+    if hasattr(args, "stream") and args.stream:
+        logger.info("Generating code with streaming...")
 
-    print("\n" + "=" * 60)
-    print(result.code)
-    print("=" * 60)
+        # Callback to print chunks as they arrive
+        def on_chunk(text: str) -> None:
+            # Print the text without newline for continuous output
+            print(text, end="", flush=True)
+
+        print("\n" + "=" * 60 + "\n")
+        result = await agent.generate_streaming(
+            prompt=prompt,
+            language=args.language,
+            on_chunk=on_chunk
+        )
+        print("\n" + "=" * 60)
+    else:
+        logger.info("Generating code...")
+        result = await agent.generate(
+            prompt=prompt,
+            language=args.language
+        )
+
+        print("\n" + "=" * 60)
+        print(result.code)
+        print("=" * 60)
+
     print(f"\nTokens used: {result.tokens_used}")
 
 async def cmd_refactor(args, agent: JmAgent) -> None:

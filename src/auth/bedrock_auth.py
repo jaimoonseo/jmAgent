@@ -110,3 +110,44 @@ def invoke_bedrock(client, model_id: str, body: dict, use_cache: bool = False) -
     except Exception as e:
         logger.error(f"Bedrock API call failed: {str(e)}")
         raise
+
+
+def invoke_bedrock_streaming(client, model_id: str, body: dict):
+    """
+    Invoke Bedrock model with streaming response.
+
+    Args:
+        client: boto3 bedrock-runtime client
+        model_id: Bedrock model ID
+        body: Request body (dict with Bedrock format)
+
+    Yields:
+        Parsed event dictionaries from the streaming response
+
+    Raises:
+        Exception: If API call fails
+    """
+    try:
+        response = client.invoke_model_with_response_stream(
+            modelId=model_id,
+            contentType="application/json",
+            accept="application/json",
+            body=json.dumps(body)
+        )
+
+        # Stream events from response body
+        for event_wrapper in response.get("body", []):
+            try:
+                # Extract the byte data from the event
+                chunk_bytes = event_wrapper.get("chunk", {}).get("bytes", "")
+                if chunk_bytes:
+                    # Parse the JSON event
+                    event = json.loads(chunk_bytes)
+                    yield event
+            except (json.JSONDecodeError, KeyError, AttributeError) as e:
+                logger.debug(f"Skipping unparseable event: {str(e)}")
+                continue
+
+    except Exception as e:
+        logger.error(f"Bedrock streaming call failed: {str(e)}")
+        raise

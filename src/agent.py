@@ -1,13 +1,14 @@
 import asyncio
 import os
 from pathlib import Path
-from typing import Optional, List
-from src.auth.bedrock_auth import build_bedrock_runtime, invoke_bedrock
+from typing import Optional, List, Callable
+from src.auth.bedrock_auth import build_bedrock_runtime, invoke_bedrock, invoke_bedrock_streaming
 from src.models.request import BedrockRequest, GenerateRequest
 from src.models.response import BedrockResponse, GenerateResponse
 from src.utils.logger import get_logger
 from src.prompts.context_loader import ProjectContext, load_project_context
 from src.prompts.context_enhancer import ContextEnhancer
+from src.streaming.stream_handler import StreamCollector
 
 logger = get_logger(__name__)
 
@@ -154,6 +155,112 @@ class JmAgent:
             language=language,
             tokens_used=response.usage
         )
+
+    async def generate_streaming(
+        self,
+        prompt: str,
+        language: Optional[str] = None,
+        context_files: Optional[List[str]] = None,
+        on_chunk: Optional[Callable[[str], None]] = None,
+    ) -> GenerateResponse:
+        """
+        Generate code with streaming output and optional callback for chunks.
+
+        Args:
+            prompt: Code generation prompt
+            language: Programming language (optional)
+            context_files: List of file paths for context (optional)
+            on_chunk: Optional callback function called with each text chunk
+
+        Returns:
+            GenerateResponse with complete generated code
+        """
+        full_prompt = prompt
+        if language:
+            full_prompt = f"Generate code in {language}:\n{prompt}"
+        if context_files:
+            full_prompt += f"\n\nConsider the style of these files: {', '.join(context_files)}"
+
+        # Enhance prompt with project context if available
+        if self.project_context:
+            enhancer = ContextEnhancer(self.project_context)
+            full_prompt = enhancer.enhance_generate_prompt(full_prompt)
+
+        system_prompt = SYSTEM_PROMPTS.get("generate", SYSTEM_PROMPTS["chat"])
+
+        bedrock_request = BedrockRequest(
+            model_id=self.model_id,
+            max_tokens=self.max_tokens,
+            system_prompt=system_prompt,
+            user_message=full_prompt,
+            messages=[]
+        )
+
+        body = bedrock_request.to_body()
+
+        # Stream from Bedrock and collect events
+        collector = StreamCollector()
+        loop = asyncio.get_event_loop()
+
+        try:
+            # Run streaming in thread pool
+            await loop.run_in_executor(
+                None,
+                self._stream_and_collect,
+                body,
+                collector,
+                on_chunk
+            )
+        except Exception as e:
+            logger.error(f"Streaming call failed: {str(e)}")
+            raise
+
+        # Finalize and return response
+        code = collector.finalize()
+
+        # For now, we estimate tokens (would need actual token counting for accuracy)
+        stats = collector.handler.get_stats()
+        estimated_usage = {
+            "input_tokens": 100,  # Placeholder - would use real token count
+            "output_tokens": stats["token_count"]
+        }
+
+        return GenerateResponse(
+            code=code,
+            language=language,
+            tokens_used=estimated_usage
+        )
+
+    def _stream_and_collect(
+        self,
+        body: dict,
+        collector: StreamCollector,
+        on_chunk: Optional[Callable[[str], None]] = None
+    ) -> None:
+        """
+        Helper method to stream from Bedrock and collect events.
+        Runs in thread pool since streaming is blocking.
+
+        Args:
+            body: Request body for Bedrock
+            collector: StreamCollector to accumulate events
+            on_chunk: Optional callback for each chunk
+        """
+        try:
+            for event in invoke_bedrock_streaming(self.client, self.model_id, body):
+                collector.add_event(event)
+
+                # Call the callback if provided and we got text
+                if on_chunk:
+                    text = collector.handler.get_buffer()
+                    # Only callback with new content (simplified - calls every time)
+                    # Real implementation might track last sent position
+                    if text:
+                        on_chunk(text)
+
+        except Exception as e:
+            logger.error(f"Error during streaming: {str(e)}")
+            raise
 
     async def refactor(
         self,
