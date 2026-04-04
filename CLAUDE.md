@@ -28,6 +28,7 @@ The JmAgent is designed to be language/framework-agnostic, supporting Python, Ty
 4. **Max Tokens: 4096** - Default output limit; configurable per action
 5. **Model Selection** - Haiku 4.5 (default/fast), Sonnet 4.6 (balanced), Opus 4.6 (high-quality)
 6. **Async Methods** - All agent methods are async for non-blocking I/O
+7. **Project Context Support** - jmAgent analyzes project structure (README, metadata, file tree) and injects this into prompts for project-aware code generation
 
 ## Common Development Commands
 
@@ -69,11 +70,13 @@ alias jm='python ~/Documents/jmAgent/src/cli.py'
 - [ ] `cli.py` - argparse CLI entry point
 - **Output**: Basic code generation working
 
-### Phase 2: Prompts & Templates
-- [ ] System prompts and action templates
-- [ ] Project context loader
-- [ ] Token counter utility
-- **Output**: High-quality code generation
+### Phase 2: Project Context Support (Current)
+- [x] Context loader for project structure analysis
+- [x] Context enhancer for prompt improvement
+- [x] --project CLI option
+- [x] JM_PROJECT_ROOT environment variable support
+- [x] Integration into JmAgent and CLI
+- [x] Full test coverage (57+ tests passing)
 
 ### Phase 3: Advanced Features
 - [ ] Multi-file context support

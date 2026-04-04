@@ -121,6 +121,53 @@ jm chat
 
 Start an interactive conversation with the assistant. Type `exit` or `quit` to end.
 
+## Project Context Support
+
+jmAgent can analyze your project structure and use that information to generate more accurate and consistent code.
+
+### Usage
+
+```bash
+# Specify project directory
+jm --project /path/to/project generate --prompt "your request"
+
+# Use environment variable
+export JM_PROJECT_ROOT=/path/to/project
+jm generate --prompt "your request"
+
+# Analyze current directory
+jm --project . chat
+```
+
+### How It Works
+
+When you specify a project with `--project`:
+1. jmAgent analyzes the project structure (README, package.json, pyproject.toml)
+2. Identifies the project type (Python, Node.js, Java, etc.)
+3. Reads project metadata and key files
+4. Automatically includes this context in all prompts
+5. Generated code follows the project's existing style and patterns
+
+### Examples
+
+```bash
+# Generate code for a Python project
+jm --project ~/my-python-app generate --prompt "Add a database utility class"
+
+# Refactor with project awareness
+jm --project ~/my-react-app refactor --file src/App.tsx --requirements "Use React hooks"
+
+# Generate tests matching project style
+jm --project . test --file src/utils.py --framework pytest
+```
+
+### Benefits
+
+- Generated code matches your project's style and conventions
+- Dependencies and frameworks are considered
+- Naming patterns are respected
+- Directory structure is understood
+
 ## Global Options
 
 - `--model {haiku,sonnet,opus}` - LLM model (default: haiku)
