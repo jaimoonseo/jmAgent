@@ -2,6 +2,14 @@ import os
 import json
 import boto3
 from src.utils.logger import get_logger
+from src.errors.exceptions import (
+    BedrockAPIError,
+    RateLimitError,
+    ModelError,
+    AuthenticationError,
+    ConfigurationError,
+)
+from src.resilience.retry import retry_with_backoff
 
 logger = get_logger(__name__)
 
@@ -34,42 +42,51 @@ def build_bedrock_runtime(region: str = "us-east-1"):
         boto3 bedrock-runtime client
 
     Raises:
-        ValueError: If authentication credentials are not configured
+        ConfigurationError: If authentication credentials are not configured
+        AuthenticationError: If authentication setup fails
     """
     auth_mode = detect_auth_mode()
 
-    if auth_mode == "api_key":
-        bearer = os.getenv("AWS_BEARER_TOKEN_BEDROCK", "").strip()
-        if bearer:
-            os.environ["AWS_BEARER_TOKEN_BEDROCK"] = bearer
-            logger.info("Using API Key authentication (ABSK)")
+    try:
+        if auth_mode == "api_key":
+            bearer = os.getenv("AWS_BEARER_TOKEN_BEDROCK", "").strip()
+            if bearer:
+                os.environ["AWS_BEARER_TOKEN_BEDROCK"] = bearer
+                logger.info("Using API Key authentication (ABSK)")
+            else:
+                logger.info("Using API Key authentication (ABSK from ACCESS_KEY)")
+
+            return boto3.client("bedrock-runtime", region_name=region)
+
         else:
-            logger.info("Using API Key authentication (ABSK from ACCESS_KEY)")
+            # IAM authentication
+            access_key = os.getenv("AWS_ACCESS_KEY_ID", "").strip()
+            secret_key = os.getenv("AWS_SECRET_ACCESS_KEY", "").strip()
 
-        return boto3.client("bedrock-runtime", region_name=region)
+            if not access_key or not secret_key:
+                logger.error("Missing IAM credentials")
+                raise ConfigurationError(
+                    "IAM authentication requires AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY"
+                )
 
-    else:
-        # IAM authentication
-        access_key = os.getenv("AWS_ACCESS_KEY_ID", "").strip()
-        secret_key = os.getenv("AWS_SECRET_ACCESS_KEY", "").strip()
-
-        if not access_key or not secret_key:
-            raise ValueError(
-                "IAM authentication requires AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY"
+            logger.info("Using IAM authentication")
+            return boto3.client(
+                "bedrock-runtime",
+                region_name=region,
+                aws_access_key_id=access_key,
+                aws_secret_access_key=secret_key,
             )
-
-        logger.info("Using IAM authentication")
-        return boto3.client(
-            "bedrock-runtime",
-            region_name=region,
-            aws_access_key_id=access_key,
-            aws_secret_access_key=secret_key
-        )
+    except ConfigurationError:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to build Bedrock client: {str(e)}")
+        raise AuthenticationError(f"Failed to initialize Bedrock client: {str(e)}")
 
 
+@retry_with_backoff(max_attempts=3, initial_delay=1.0, max_delay=10.0)
 def invoke_bedrock(client, model_id: str, body: dict, use_cache: bool = False) -> dict:
     """
-    Invoke Bedrock model with request body.
+    Invoke Bedrock model with request body and automatic retry on failure.
 
     Args:
         client: boto3 bedrock-runtime client
@@ -82,14 +99,16 @@ def invoke_bedrock(client, model_id: str, body: dict, use_cache: bool = False) -
         usage includes 'cache_creation_input_tokens' and 'cache_read_input_tokens' if caching
 
     Raises:
-        Exception: If API call fails
+        RateLimitError: If API rate limit exceeded (retry_after included)
+        ModelError: If model not found or invalid
+        BedrockAPIError: For other API failures
     """
     try:
         response = client.invoke_model(
             modelId=model_id,
             contentType="application/json",
             accept="application/json",
-            body=json.dumps(body)
+            body=json.dumps(body),
         )
 
         response_body = json.loads(response["body"].read())
@@ -101,20 +120,53 @@ def invoke_bedrock(client, model_id: str, body: dict, use_cache: bool = False) -
             usage.setdefault("cache_creation_input_tokens", 0)
             usage.setdefault("cache_read_input_tokens", 0)
 
+        logger.info(
+            "Bedrock call successful",
+            extra={
+                "model": model_id,
+                "input_tokens": usage.get("input_tokens", 0),
+                "output_tokens": usage.get("output_tokens", 0),
+            },
+        )
+
         return {
             "content": response_body["content"][0]["text"],
-            "stop_reason": response_body["stop_reason"],
-            "usage": usage
+            "stop_reason": response_body.get("stop_reason", "end_turn"),
+            "usage": usage,
         }
 
     except Exception as e:
-        logger.error(f"Bedrock API call failed: {str(e)}")
-        raise
+        error_str = str(e).lower()
+
+        # Rate limit errors
+        if "throttling" in error_str or "too many requests" in error_str:
+            logger.warning(
+                "Rate limited on Bedrock API",
+                extra={"model": model_id, "error": str(e)},
+            )
+            raise RateLimitError(str(e), retry_after=60)
+
+        # Model not found or invalid
+        elif "model" in error_str and ("not found" in error_str or "invalid" in error_str):
+            logger.error(
+                "Invalid or missing model",
+                extra={"model": model_id, "error": str(e)},
+            )
+            raise ModelError(f"Model {model_id} not found or invalid: {str(e)}")
+
+        # Generic Bedrock API error
+        else:
+            logger.error(
+                "Bedrock API error",
+                extra={"model": model_id, "error": str(e)},
+            )
+            raise BedrockAPIError(f"Bedrock API failed: {str(e)}")
 
 
+@retry_with_backoff(max_attempts=3, initial_delay=1.0, max_delay=10.0)
 def invoke_bedrock_streaming(client, model_id: str, body: dict):
     """
-    Invoke Bedrock model with streaming response.
+    Invoke Bedrock model with streaming response and automatic retry on failure.
 
     Args:
         client: boto3 bedrock-runtime client
@@ -125,14 +177,16 @@ def invoke_bedrock_streaming(client, model_id: str, body: dict):
         Parsed event dictionaries from the streaming response
 
     Raises:
-        Exception: If API call fails
+        RateLimitError: If API rate limit exceeded (retry_after included)
+        ModelError: If model not found or invalid
+        BedrockAPIError: For other API failures
     """
     try:
         response = client.invoke_model_with_response_stream(
             modelId=model_id,
             contentType="application/json",
             accept="application/json",
-            body=json.dumps(body)
+            body=json.dumps(body),
         )
 
         # Stream events from response body
@@ -148,6 +202,31 @@ def invoke_bedrock_streaming(client, model_id: str, body: dict):
                 logger.debug(f"Skipping unparseable event: {str(e)}")
                 continue
 
+        logger.info("Bedrock streaming call completed", extra={"model": model_id})
+
     except Exception as e:
-        logger.error(f"Bedrock streaming call failed: {str(e)}")
-        raise
+        error_str = str(e).lower()
+
+        # Rate limit errors
+        if "throttling" in error_str or "too many requests" in error_str:
+            logger.warning(
+                "Rate limited on Bedrock streaming",
+                extra={"model": model_id, "error": str(e)},
+            )
+            raise RateLimitError(str(e), retry_after=60)
+
+        # Model not found or invalid
+        elif "model" in error_str and ("not found" in error_str or "invalid" in error_str):
+            logger.error(
+                "Invalid or missing model for streaming",
+                extra={"model": model_id, "error": str(e)},
+            )
+            raise ModelError(f"Model {model_id} not found or invalid: {str(e)}")
+
+        # Generic Bedrock API error
+        else:
+            logger.error(
+                "Bedrock streaming API error",
+                extra={"model": model_id, "error": str(e)},
+            )
+            raise BedrockAPIError(f"Bedrock streaming API failed: {str(e)}")

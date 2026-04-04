@@ -3,6 +3,7 @@ import json
 import pytest
 from unittest.mock import patch, MagicMock
 from src.auth.bedrock_auth import detect_auth_mode, build_bedrock_runtime, invoke_bedrock
+from src.errors.exceptions import ConfigurationError
 
 
 def test_detect_auth_mode_with_api_key():
@@ -57,7 +58,7 @@ def test_build_bedrock_runtime_with_iam():
 def test_build_bedrock_runtime_iam_missing_secret():
     """Test build_bedrock_runtime raises error when secret key missing."""
     with patch.dict(os.environ, {"AWS_ACCESS_KEY_ID": "AKIA-12345"}, clear=True):
-        with pytest.raises(ValueError, match="IAM authentication requires"):
+        with pytest.raises(ConfigurationError, match="IAM authentication requires"):
             build_bedrock_runtime()
 
 
