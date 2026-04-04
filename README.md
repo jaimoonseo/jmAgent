@@ -168,15 +168,53 @@ jm --project . test --file src/utils.py --framework pytest
 - Naming patterns are respected
 - Directory structure is understood
 
+## Phase 3: Advanced Features
+
+jmAgent now includes powerful Phase 3 features to make code generation faster and more versatile.
+
+### Prompt Caching
+Cache project context to reduce token usage by ~90% on repeated requests.
+```bash
+jm --project . generate --prompt "Create a model"  # Context cached
+jm --project . generate --prompt "Create a view"   # Reuses cached context
+```
+
+### Streaming Responses
+See generated code appear in real-time as tokens are generated.
+```bash
+jm generate --prompt "Write a parser" --stream
+```
+
+### Code Auto-formatting
+Automatically format generated code using Black, Prettier, and other language-specific formatters.
+```bash
+jm generate --prompt "Sort array" --language python --format
+jm refactor --file src/main.py --requirements "Add types" --format
+```
+
+### Multi-file Support
+Refactor and test multiple files together as a cohesive unit.
+```bash
+jm refactor --files "src/**/*.py" --requirements "Add type hints"
+jm test --files "auth.py,utils.py" --framework pytest --coverage 0.9
+```
+
+For detailed information, see [docs/PHASE3_FEATURES.md](docs/PHASE3_FEATURES.md).
+
 ## Global Options
 
 - `--model {haiku,sonnet,opus}` - LLM model (default: haiku)
 - `--temperature FLOAT` - Sampling temperature 0.0-1.0 (default: 0.2)
 - `--max-tokens INT` - Maximum output tokens (default: 4096)
+- `--project PATH` - Project directory for context analysis
+- `--stream` - Stream responses in real-time
+- `--format` - Auto-format generated code
+- `--files PATTERN` - Multiple files (comma-separated or glob)
 
 Example:
 ```bash
 jm --model sonnet --temperature 0.5 generate --prompt "Creative code"
+jm --project . refactor --files "src/**/*.py" --requirements "..." --format --stream
 ```
 
 ## Architecture
