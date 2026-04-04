@@ -1,5 +1,6 @@
 import asyncio
 import os
+import time
 from pathlib import Path
 from typing import Optional, List, Callable, Dict
 from src.auth.bedrock_auth import build_bedrock_runtime, invoke_bedrock, invoke_bedrock_streaming
@@ -10,6 +11,7 @@ from src.prompts.context_loader import ProjectContext, load_project_context, loa
 from src.prompts.context_enhancer import ContextEnhancer
 from src.streaming.stream_handler import StreamCollector
 from src.formatting.formatter import CodeFormatter
+from src.monitoring.metrics import MetricsCollector
 
 logger = get_logger(__name__)
 
@@ -62,6 +64,7 @@ class JmAgent:
         self.conversation_history: List[dict] = []
         self.project_context = project_context
         self.formatter = CodeFormatter()
+        self.metrics = MetricsCollector()
 
         logger.info(f"Initialized JmAgent with model: {self.model}")
 
@@ -82,50 +85,76 @@ class JmAgent:
         Returns:
             BedrockResponse
         """
-        # Enhance prompt with project context if available
-        if self.project_context:
-            enhancer = ContextEnhancer(self.project_context)
-            if action == "generate":
-                prompt = enhancer.enhance_generate_prompt(prompt)
-            elif action == "refactor":
-                prompt = enhancer.enhance_refactor_prompt(prompt)
-            elif action == "test":
-                prompt = enhancer.enhance_test_prompt(prompt)
-            elif action == "explain":
-                prompt = enhancer.enhance_explain_prompt(prompt)
-            elif action == "fix":
-                prompt = enhancer.enhance_fix_prompt(prompt)
+        start_time = time.time()
 
-        system_prompt = SYSTEM_PROMPTS.get(action, SYSTEM_PROMPTS["chat"])
+        try:
+            # Enhance prompt with project context if available
+            if self.project_context:
+                enhancer = ContextEnhancer(self.project_context)
+                if action == "generate":
+                    prompt = enhancer.enhance_generate_prompt(prompt)
+                elif action == "refactor":
+                    prompt = enhancer.enhance_refactor_prompt(prompt)
+                elif action == "test":
+                    prompt = enhancer.enhance_test_prompt(prompt)
+                elif action == "explain":
+                    prompt = enhancer.enhance_explain_prompt(prompt)
+                elif action == "fix":
+                    prompt = enhancer.enhance_fix_prompt(prompt)
 
-        messages = self.conversation_history.copy() if use_history else []
+            system_prompt = SYSTEM_PROMPTS.get(action, SYSTEM_PROMPTS["chat"])
 
-        bedrock_request = BedrockRequest(
-            model_id=self.model_id,
-            max_tokens=self.max_tokens,
-            system_prompt=system_prompt,
-            user_message=prompt,
-            messages=messages
-        )
+            messages = self.conversation_history.copy() if use_history else []
 
-        body = bedrock_request.to_body()
+            bedrock_request = BedrockRequest(
+                model_id=self.model_id,
+                max_tokens=self.max_tokens,
+                system_prompt=system_prompt,
+                user_message=prompt,
+                messages=messages
+            )
 
-        # Run blocking API call in thread pool
-        loop = asyncio.get_event_loop()
-        response_dict = await loop.run_in_executor(
-            None,
-            lambda: invoke_bedrock(self.client, self.model_id, body)
-        )
+            body = bedrock_request.to_body()
 
-        response = BedrockResponse(
-            content=response_dict["content"],
-            stop_reason=response_dict["stop_reason"],
-            usage=response_dict["usage"]
-        )
+            # Run blocking API call in thread pool
+            loop = asyncio.get_event_loop()
+            response_dict = await loop.run_in_executor(
+                None,
+                lambda: invoke_bedrock(self.client, self.model_id, body)
+            )
 
-        logger.info(f"Bedrock call successful. Tokens: {response.usage}")
+            response = BedrockResponse(
+                content=response_dict["content"],
+                stop_reason=response_dict["stop_reason"],
+                usage=response_dict["usage"]
+            )
 
-        return response
+            logger.info(f"Bedrock call successful. Tokens: {response.usage}")
+
+            # Record metric
+            response_time = time.time() - start_time
+            self.metrics.record_metric(
+                action_type=action,
+                response_time=response_time,
+                input_tokens=response.usage.get("input_tokens", 0),
+                output_tokens=response.usage.get("output_tokens", 0),
+                success=True
+            )
+
+            return response
+
+        except Exception as e:
+            # Record failed metric
+            response_time = time.time() - start_time
+            self.metrics.record_metric(
+                action_type=action,
+                response_time=response_time,
+                input_tokens=0,
+                output_tokens=0,
+                success=False,
+                error=str(e)
+            )
+            raise
 
     async def generate(
         self,
@@ -531,3 +560,26 @@ class JmAgent:
         """Reset conversation history."""
         self.conversation_history = []
         logger.info("Conversation history reset")
+
+    def get_metrics(self) -> MetricsCollector:
+        """
+        Get the metrics collector instance.
+
+        Returns:
+            MetricsCollector instance
+        """
+        return self.metrics
+
+    def get_metrics_summary(self) -> Dict:
+        """
+        Get a summary of all collected metrics.
+
+        Returns:
+            Dictionary with metrics summary
+        """
+        return self.metrics.get_all_stats()
+
+    def clear_metrics(self) -> None:
+        """Clear all collected metrics."""
+        self.metrics.clear()
+        logger.info("Metrics cleared")
