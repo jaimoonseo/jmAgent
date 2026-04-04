@@ -67,7 +67,7 @@ def build_bedrock_runtime(region: str = "us-east-1"):
         )
 
 
-def invoke_bedrock(client, model_id: str, body: dict) -> dict:
+def invoke_bedrock(client, model_id: str, body: dict, use_cache: bool = False) -> dict:
     """
     Invoke Bedrock model with request body.
 
@@ -75,9 +75,11 @@ def invoke_bedrock(client, model_id: str, body: dict) -> dict:
         client: boto3 bedrock-runtime client
         model_id: Bedrock model ID
         body: Request body (dict with Bedrock format)
+        use_cache: Whether cache support is enabled (for tracking)
 
     Returns:
         dict with 'content', 'stop_reason', and 'usage'
+        usage includes 'cache_creation_input_tokens' and 'cache_read_input_tokens' if caching
 
     Raises:
         Exception: If API call fails
@@ -92,10 +94,17 @@ def invoke_bedrock(client, model_id: str, body: dict) -> dict:
 
         response_body = json.loads(response["body"].read())
 
+        usage = response_body["usage"]
+
+        # Track cache metrics if available
+        if use_cache:
+            usage.setdefault("cache_creation_input_tokens", 0)
+            usage.setdefault("cache_read_input_tokens", 0)
+
         return {
             "content": response_body["content"][0]["text"],
             "stop_reason": response_body["stop_reason"],
-            "usage": response_body["usage"]
+            "usage": usage
         }
 
     except Exception as e:
