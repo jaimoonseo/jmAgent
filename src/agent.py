@@ -9,6 +9,7 @@ from src.utils.logger import get_logger
 from src.prompts.context_loader import ProjectContext, load_project_context
 from src.prompts.context_enhancer import ContextEnhancer
 from src.streaming.stream_handler import StreamCollector
+from src.formatting.formatter import CodeFormatter
 
 logger = get_logger(__name__)
 
@@ -60,6 +61,7 @@ class JmAgent:
         self.client = build_bedrock_runtime(region)
         self.conversation_history: List[dict] = []
         self.project_context = project_context
+        self.formatter = CodeFormatter()
 
         logger.info(f"Initialized JmAgent with model: {self.model}")
 
@@ -130,6 +132,7 @@ class JmAgent:
         prompt: str,
         language: Optional[str] = None,
         context_files: Optional[List[str]] = None,
+        format_code: bool = False,
     ) -> GenerateResponse:
         """
         Generate code based on prompt.
@@ -138,6 +141,7 @@ class JmAgent:
             prompt: Code generation prompt
             language: Programming language (optional)
             context_files: List of file paths for context (optional)
+            format_code: Whether to format the generated code (default: False)
 
         Returns:
             GenerateResponse with generated code
@@ -150,8 +154,12 @@ class JmAgent:
 
         response = await self._call_bedrock("generate", full_prompt)
 
+        code = response.content
+        if format_code:
+            code = self.formatter.format(code, language=language)
+
         return GenerateResponse(
-            code=response.content,
+            code=code,
             language=language,
             tokens_used=response.usage
         )
@@ -162,6 +170,7 @@ class JmAgent:
         language: Optional[str] = None,
         context_files: Optional[List[str]] = None,
         on_chunk: Optional[Callable[[str], None]] = None,
+        format_code: bool = False,
     ) -> GenerateResponse:
         """
         Generate code with streaming output and optional callback for chunks.
@@ -171,6 +180,7 @@ class JmAgent:
             language: Programming language (optional)
             context_files: List of file paths for context (optional)
             on_chunk: Optional callback function called with each text chunk
+            format_code: Whether to format the generated code (default: False)
 
         Returns:
             GenerateResponse with complete generated code
@@ -217,6 +227,10 @@ class JmAgent:
 
         # Finalize and return response
         code = collector.finalize()
+
+        # Format code if requested
+        if format_code:
+            code = self.formatter.format(code, language=language)
 
         # For now, we estimate tokens (would need actual token counting for accuracy)
         stats = collector.handler.get_stats()
@@ -267,6 +281,7 @@ class JmAgent:
         code: str,
         requirements: str,
         language: Optional[str] = None,
+        format_code: bool = False,
     ) -> GenerateResponse:
         """
         Refactor code based on requirements.
@@ -275,6 +290,7 @@ class JmAgent:
             code: Code to refactor
             requirements: Refactoring requirements
             language: Programming language (optional)
+            format_code: Whether to format the refactored code (default: False)
 
         Returns:
             GenerateResponse with refactored code
@@ -285,8 +301,12 @@ class JmAgent:
 
         response = await self._call_bedrock("refactor", full_prompt)
 
+        refactored_code = response.content
+        if format_code:
+            refactored_code = self.formatter.format(refactored_code, language=language)
+
         return GenerateResponse(
-            code=response.content,
+            code=refactored_code,
             language=language,
             tokens_used=response.usage
         )

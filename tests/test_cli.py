@@ -76,3 +76,57 @@ def test_parser_chat_command():
     args = parser.parse_args(["chat"])
 
     assert args.action == "chat"
+
+
+def test_parser_generate_with_format_flag():
+    """Test generate command with --format flag."""
+    parser = create_parser()
+    args = parser.parse_args([
+        "generate",
+        "--prompt", "Create a function",
+        "--format"
+    ])
+
+    assert args.action == "generate"
+    assert args.prompt == "Create a function"
+    assert args.format is True
+
+
+def test_parser_generate_without_format_flag():
+    """Test generate command without --format flag."""
+    parser = create_parser()
+    args = parser.parse_args([
+        "generate",
+        "--prompt", "Create a function"
+    ])
+
+    assert args.action == "generate"
+    assert args.format is False
+
+
+def test_parser_refactor_with_format_flag():
+    """Test refactor command with --format flag."""
+    parser = create_parser()
+    args = parser.parse_args([
+        "refactor",
+        "--file", "main.py",
+        "--requirements", "Add type hints",
+        "--format"
+    ])
+
+    assert args.action == "refactor"
+    assert args.file == "main.py"
+    assert args.format is True
+
+
+def test_parser_refactor_without_format_flag():
+    """Test refactor command without --format flag."""
+    parser = create_parser()
+    args = parser.parse_args([
+        "refactor",
+        "--file", "main.py",
+        "--requirements", "Add type hints"
+    ])
+
+    assert args.action == "refactor"
+    assert args.format is False

@@ -63,6 +63,11 @@ def create_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Stream output in real-time"
     )
+    gen_parser.add_argument(
+        "--format",
+        action="store_true",
+        help="Format the generated code"
+    )
 
     # refactor command
     ref_parser = subparsers.add_parser("refactor", help="Refactor code")
@@ -79,6 +84,11 @@ def create_parser() -> argparse.ArgumentParser:
     ref_parser.add_argument(
         "--language",
         help="Programming language"
+    )
+    ref_parser.add_argument(
+        "--format",
+        action="store_true",
+        help="Format the refactored code"
     )
 
     # test command
@@ -148,6 +158,9 @@ async def cmd_generate(args, agent: JmAgent) -> None:
     else:
         prompt = args.prompt
 
+    # Get format_code flag
+    format_code = hasattr(args, "format") and args.format
+
     # Check if streaming is requested
     if hasattr(args, "stream") and args.stream:
         logger.info("Generating code with streaming...")
@@ -161,14 +174,16 @@ async def cmd_generate(args, agent: JmAgent) -> None:
         result = await agent.generate_streaming(
             prompt=prompt,
             language=args.language,
-            on_chunk=on_chunk
+            on_chunk=on_chunk,
+            format_code=format_code
         )
         print("\n" + "=" * 60)
     else:
         logger.info("Generating code...")
         result = await agent.generate(
             prompt=prompt,
-            language=args.language
+            language=args.language,
+            format_code=format_code
         )
 
         print("\n" + "=" * 60)
@@ -186,11 +201,15 @@ async def cmd_refactor(args, agent: JmAgent) -> None:
         logger.error(f"File not found: {args.file}")
         sys.exit(1)
 
+    # Get format_code flag
+    format_code = hasattr(args, "format") and args.format
+
     logger.info(f"Refactoring {args.file}...")
     result = await agent.refactor(
         code=code,
         requirements=args.requirements,
-        language=args.language
+        language=args.language,
+        format_code=format_code
     )
 
     print("\n" + "=" * 60)

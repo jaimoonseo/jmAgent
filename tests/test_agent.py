@@ -169,3 +169,110 @@ async def test_refactor():
             result = await agent.refactor(code, "Add type hints")
 
             assert "-> str" in result.code
+
+
+@pytest.mark.asyncio
+async def test_generate_with_formatting():
+    """Test code generation with formatting enabled."""
+    with patch("src.agent.build_bedrock_runtime"):
+        agent = JmAgent()
+
+        # Mock Bedrock response
+        with patch.object(
+            agent,
+            "_call_bedrock",
+            new_callable=AsyncMock
+        ) as mock_bedrock:
+            from src.models.response import BedrockResponse
+            mock_bedrock.return_value = BedrockResponse(
+                content="def hello():\n    return 'world'",
+                stop_reason="end_turn",
+                usage={"input_tokens": 50, "output_tokens": 20}
+            )
+
+            # Mock formatter to verify it's called
+            with patch.object(
+                agent.formatter,
+                "format",
+                return_value="def hello():\n    return 'world'"
+            ) as mock_format:
+                result = await agent.generate(
+                    "Create a hello function",
+                    language="python",
+                    format_code=True
+                )
+
+                # Verify formatter was called
+                mock_format.assert_called_once()
+                assert "def hello" in result.code
+
+
+@pytest.mark.asyncio
+async def test_refactor_with_formatting():
+    """Test code refactoring with formatting enabled."""
+    with patch("src.agent.build_bedrock_runtime"):
+        agent = JmAgent()
+
+        # Mock Bedrock response
+        with patch.object(
+            agent,
+            "_call_bedrock",
+            new_callable=AsyncMock
+        ) as mock_bedrock:
+            from src.models.response import BedrockResponse
+            mock_bedrock.return_value = BedrockResponse(
+                content="def hello():\n    return 'world'",
+                stop_reason="end_turn",
+                usage={"input_tokens": 50, "output_tokens": 20}
+            )
+
+            # Mock formatter to verify it's called
+            with patch.object(
+                agent.formatter,
+                "format",
+                return_value="def hello():\n    return 'world'"
+            ) as mock_format:
+                result = await agent.refactor(
+                    code="def hello():return 'world'",
+                    requirements="add formatting",
+                    language="python",
+                    format_code=True
+                )
+
+                # Verify formatter was called
+                mock_format.assert_called_once()
+                assert "def hello" in result.code
+
+
+@pytest.mark.asyncio
+async def test_generate_without_formatting():
+    """Test that formatting is not applied when format_code=False."""
+    with patch("src.agent.build_bedrock_runtime"):
+        agent = JmAgent()
+
+        # Mock Bedrock response
+        with patch.object(
+            agent,
+            "_call_bedrock",
+            new_callable=AsyncMock
+        ) as mock_bedrock:
+            from src.models.response import BedrockResponse
+            mock_bedrock.return_value = BedrockResponse(
+                content="def hello():return 'world'",
+                stop_reason="end_turn",
+                usage={"input_tokens": 50, "output_tokens": 20}
+            )
+
+            # Mock formatter to verify it's NOT called
+            with patch.object(
+                agent.formatter,
+                "format",
+            ) as mock_format:
+                result = await agent.generate(
+                    "Create a hello function",
+                    format_code=False
+                )
+
+                # Verify formatter was NOT called
+                mock_format.assert_not_called()
+                assert result.code == "def hello():return 'world'"
