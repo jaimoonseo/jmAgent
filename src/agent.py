@@ -1,12 +1,12 @@
 import asyncio
 import os
 from pathlib import Path
-from typing import Optional, List, Callable
+from typing import Optional, List, Callable, Dict
 from src.auth.bedrock_auth import build_bedrock_runtime, invoke_bedrock, invoke_bedrock_streaming
 from src.models.request import BedrockRequest, GenerateRequest
 from src.models.response import BedrockResponse, GenerateResponse
 from src.utils.logger import get_logger
-from src.prompts.context_loader import ProjectContext, load_project_context
+from src.prompts.context_loader import ProjectContext, load_project_context, load_multiple_files
 from src.prompts.context_enhancer import ContextEnhancer
 from src.streaming.stream_handler import StreamCollector
 from src.formatting.formatter import CodeFormatter
@@ -311,6 +311,89 @@ class JmAgent:
             tokens_used=response.usage
         )
 
+    async def refactor_multiple(
+        self,
+        file_paths: List[str],
+        requirements: str,
+        language: Optional[str] = None,
+        format_code: bool = False,
+    ) -> Dict[str, GenerateResponse]:
+        """
+        Refactor multiple files together.
+
+        Args:
+            file_paths: List of file paths to refactor
+            requirements: Refactoring requirements
+            language: Programming language (optional)
+            format_code: Whether to format the refactored code (default: False)
+
+        Returns:
+            Dict mapping file_path -> GenerateResponse with refactored code
+        """
+        # Load all files as context
+        files_context = load_multiple_files(file_paths)
+
+        full_prompt = f"Refactor these files:\n\n{files_context}\n\nRequirements: {requirements}"
+        if language:
+            full_prompt = f"{full_prompt}\n\nLanguage: {language}"
+
+        response = await self._call_bedrock("refactor", full_prompt)
+
+        # Parse response to extract per-file code
+        # Look for "## File: <filename>" markers
+        result = {}
+        content = response.content
+        lines = content.split("\n")
+        current_file = None
+        current_code = []
+
+        for line in lines:
+            if line.startswith("## File:"):
+                # Save previous file if any
+                if current_file and current_code:
+                    refactored = "\n".join(current_code).strip()
+                    if format_code:
+                        refactored = self.formatter.format(refactored, language=language)
+                    result[current_file] = GenerateResponse(
+                        code=refactored,
+                        language=language,
+                        tokens_used=response.usage
+                    )
+
+                # Extract new filename
+                # Format: "## File: filename.py" or "## File: filename.py (size bytes)"
+                filename = line.replace("## File:", "").strip()
+                # Remove size info if present
+                if "(" in filename:
+                    filename = filename[:filename.index("(")].strip()
+                current_file = filename
+                current_code = []
+            elif current_file:
+                # Skip code block markers
+                if line.strip() not in ("```", "```python", "```javascript", "```typescript"):
+                    current_code.append(line)
+
+        # Save last file
+        if current_file and current_code:
+            refactored = "\n".join(current_code).strip()
+            if format_code:
+                refactored = self.formatter.format(refactored, language=language)
+            result[current_file] = GenerateResponse(
+                code=refactored,
+                language=language,
+                tokens_used=response.usage
+            )
+
+        # If no files were parsed, return empty dict or wrap entire response
+        if not result and file_paths:
+            result[file_paths[0]] = GenerateResponse(
+                code=response.content,
+                language=language,
+                tokens_used=response.usage
+            )
+
+        return result
+
     async def add_tests(
         self,
         code: str,
@@ -329,6 +412,36 @@ class JmAgent:
             GenerateResponse with test code
         """
         full_prompt = f"Generate {test_framework} tests for this code with {target_coverage*100}% coverage:\n\n{code}"
+
+        response = await self._call_bedrock("test", full_prompt)
+
+        return GenerateResponse(
+            code=response.content,
+            language=None,
+            tokens_used=response.usage
+        )
+
+    async def test_multiple(
+        self,
+        file_paths: List[str],
+        test_framework: str = "pytest",
+        target_coverage: float = 0.8,
+    ) -> GenerateResponse:
+        """
+        Generate tests for multiple files together.
+
+        Args:
+            file_paths: List of file paths to test
+            test_framework: Test framework (pytest, jest, vitest)
+            target_coverage: Target code coverage (0.0-1.0)
+
+        Returns:
+            GenerateResponse with test code covering all files
+        """
+        # Load all files as context
+        files_context = load_multiple_files(file_paths)
+
+        full_prompt = f"Generate {test_framework} tests for these files with {target_coverage*100}% coverage:\n\n{files_context}"
 
         response = await self._call_bedrock("test", full_prompt)
 

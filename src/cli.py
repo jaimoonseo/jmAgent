@@ -2,12 +2,38 @@ import argparse
 import asyncio
 import os
 import sys
-from typing import Optional
+import glob
+from typing import Optional, List
 from dotenv import load_dotenv
 from src.agent import JmAgent
 from src.utils.logger import get_logger
 
 logger = get_logger(__name__)
+
+
+def parse_file_list(file_arg: str) -> List[str]:
+    """
+    Parse file argument which can be:
+    - Comma-separated list: "file1.py,file2.py"
+    - Glob pattern: "src/**/*.py"
+    - Single file: "main.py"
+
+    Args:
+        file_arg: File argument string
+
+    Returns:
+        List of file paths
+    """
+    if "," in file_arg:
+        # Comma-separated
+        return [f.strip() for f in file_arg.split(",")]
+    elif "*" in file_arg or "?" in file_arg:
+        # Glob pattern
+        matches = glob.glob(file_arg, recursive=True)
+        return sorted(matches)
+    else:
+        # Single file
+        return [file_arg]
 
 def create_parser() -> argparse.ArgumentParser:
     """Create and configure argument parser."""
@@ -73,8 +99,11 @@ def create_parser() -> argparse.ArgumentParser:
     ref_parser = subparsers.add_parser("refactor", help="Refactor code")
     ref_parser.add_argument(
         "--file",
-        required=True,
         help="File to refactor"
+    )
+    ref_parser.add_argument(
+        "--files",
+        help="Multiple files (comma-separated or glob pattern)"
     )
     ref_parser.add_argument(
         "--requirements",
@@ -95,8 +124,11 @@ def create_parser() -> argparse.ArgumentParser:
     test_parser = subparsers.add_parser("test", help="Generate tests")
     test_parser.add_argument(
         "--file",
-        required=True,
         help="File to test"
+    )
+    test_parser.add_argument(
+        "--files",
+        help="Multiple files (comma-separated or glob pattern)"
     )
     test_parser.add_argument(
         "--framework",
@@ -194,49 +226,105 @@ async def cmd_generate(args, agent: JmAgent) -> None:
 
 async def cmd_refactor(args, agent: JmAgent) -> None:
     """Handle refactor command."""
-    try:
-        with open(args.file, "r") as f:
-            code = f.read()
-    except FileNotFoundError:
-        logger.error(f"File not found: {args.file}")
-        sys.exit(1)
-
     # Get format_code flag
     format_code = hasattr(args, "format") and args.format
 
-    logger.info(f"Refactoring {args.file}...")
-    result = await agent.refactor(
-        code=code,
-        requirements=args.requirements,
-        language=args.language,
-        format_code=format_code
-    )
+    # Check if using multi-file or single-file mode
+    if hasattr(args, "files") and args.files:
+        # Multi-file mode
+        file_paths = parse_file_list(args.files)
+        if not file_paths:
+            logger.error(f"No files found matching: {args.files}")
+            sys.exit(1)
 
-    print("\n" + "=" * 60)
-    print(result.code)
-    print("=" * 60)
-    print(f"\nTokens used: {result.tokens_used}")
+        logger.info(f"Refactoring {len(file_paths)} files...")
+        result = await agent.refactor_multiple(
+            file_paths=file_paths,
+            requirements=args.requirements,
+            language=args.language,
+            format_code=format_code
+        )
+
+        # Display results for each file
+        for file_path, response in result.items():
+            print("\n" + "=" * 60)
+            print(f"File: {file_path}")
+            print("=" * 60)
+            print(response.code)
+            print(f"Tokens used: {response.tokens_used}")
+
+    else:
+        # Single-file mode (backward compatible)
+        if not hasattr(args, "file") or not args.file:
+            logger.error("Either --file or --files is required")
+            sys.exit(1)
+
+        try:
+            with open(args.file, "r") as f:
+                code = f.read()
+        except FileNotFoundError:
+            logger.error(f"File not found: {args.file}")
+            sys.exit(1)
+
+        logger.info(f"Refactoring {args.file}...")
+        result = await agent.refactor(
+            code=code,
+            requirements=args.requirements,
+            language=args.language,
+            format_code=format_code
+        )
+
+        print("\n" + "=" * 60)
+        print(result.code)
+        print("=" * 60)
+        print(f"\nTokens used: {result.tokens_used}")
 
 async def cmd_test(args, agent: JmAgent) -> None:
     """Handle test command."""
-    try:
-        with open(args.file, "r") as f:
-            code = f.read()
-    except FileNotFoundError:
-        logger.error(f"File not found: {args.file}")
-        sys.exit(1)
+    # Check if using multi-file or single-file mode
+    if hasattr(args, "files") and args.files:
+        # Multi-file mode
+        file_paths = parse_file_list(args.files)
+        if not file_paths:
+            logger.error(f"No files found matching: {args.files}")
+            sys.exit(1)
 
-    logger.info(f"Generating tests for {args.file}...")
-    result = await agent.add_tests(
-        code=code,
-        test_framework=args.framework,
-        target_coverage=args.coverage
-    )
+        logger.info(f"Generating tests for {len(file_paths)} files...")
+        result = await agent.test_multiple(
+            file_paths=file_paths,
+            test_framework=args.framework,
+            target_coverage=args.coverage
+        )
 
-    print("\n" + "=" * 60)
-    print(result.code)
-    print("=" * 60)
-    print(f"\nTokens used: {result.tokens_used}")
+        print("\n" + "=" * 60)
+        print(result.code)
+        print("=" * 60)
+        print(f"\nTokens used: {result.tokens_used}")
+
+    else:
+        # Single-file mode (backward compatible)
+        if not hasattr(args, "file") or not args.file:
+            logger.error("Either --file or --files is required")
+            sys.exit(1)
+
+        try:
+            with open(args.file, "r") as f:
+                code = f.read()
+        except FileNotFoundError:
+            logger.error(f"File not found: {args.file}")
+            sys.exit(1)
+
+        logger.info(f"Generating tests for {args.file}...")
+        result = await agent.add_tests(
+            code=code,
+            test_framework=args.framework,
+            target_coverage=args.coverage
+        )
+
+        print("\n" + "=" * 60)
+        print(result.code)
+        print("=" * 60)
+        print(f"\nTokens used: {result.tokens_used}")
 
 async def cmd_explain(args, agent: JmAgent) -> None:
     """Handle explain command."""

@@ -6,6 +6,7 @@ import json
 # Configuration constants
 MAX_README_CHARS = 1000
 MAX_TREE_LINES = 50
+MAX_MULTIPLE_FILES_SIZE = 50000  # 50KB default limit for multiple files
 
 @dataclass
 class ProjectContext:
@@ -182,3 +183,103 @@ def load_project_context(project_root: Path) -> ProjectContext:
         file_tree=file_tree,
         key_files=key_files
     )
+
+
+def load_multiple_files(file_paths: List[str], max_size: int = MAX_MULTIPLE_FILES_SIZE) -> str:
+    """
+    Load multiple files and format as context.
+
+    Args:
+        file_paths: List of file paths to load
+        max_size: Maximum total size in bytes (default: 50KB)
+
+    Returns:
+        Formatted context string with:
+        - File count
+        - Each file preceded by "## File: <filename>"
+        - File size for each file
+        - File contents in code blocks
+        - Stops loading when max_size reached
+
+    Example output:
+        File count: 2
+        Total size: 1024 bytes
+
+        ## File: main.py (512 bytes)
+        ```python
+        def hello():
+            return "world"
+        ```
+
+        ## File: utils.py (512 bytes)
+        ```python
+        def add(a, b):
+            return a + b
+        ```
+    """
+    if not file_paths:
+        return "File count: 0\nTotal size: 0 bytes\n"
+
+    parts = []
+    total_size = 0
+    files_loaded = 0
+    file_details = []
+
+    for file_path in file_paths:
+        # Check if we've exceeded size limit
+        if total_size >= max_size:
+            parts.append(f"\n(Stopped loading at size limit of {max_size} bytes)")
+            break
+
+        try:
+            path = Path(file_path)
+
+            if not path.exists():
+                continue
+
+            # Read file content
+            try:
+                content = path.read_text(encoding="utf-8")
+            except (UnicodeDecodeError, PermissionError):
+                continue
+
+            file_size = len(content.encode("utf-8"))
+
+            # Check if adding this file would exceed limit
+            if total_size + file_size > max_size:
+                # Try to truncate the file content to fit
+                available = max_size - total_size
+                if available > 100:  # Only include if we have at least 100 bytes
+                    content = content[:available // 2]  # Rough estimate
+                    file_size = available
+                else:
+                    # Skip this file
+                    parts.append(f"\n(Stopped loading at size limit of {max_size} bytes)")
+                    break
+
+            total_size += file_size
+            files_loaded += 1
+
+            # Format file entry
+            filename = path.name
+            file_details.append((filename, file_size))
+            parts.append(f"## File: {filename} ({file_size} bytes)")
+            parts.append("```")
+            parts.append(content)
+            parts.append("```")
+
+        except Exception:
+            # Skip problematic files
+            continue
+
+    # Build result
+    result_parts = [
+        f"File count: {files_loaded}",
+        f"Total size: {total_size} bytes",
+        ""
+    ]
+
+    if file_details:
+        result_parts.extend(parts)
+
+    return "\n".join(result_parts)
