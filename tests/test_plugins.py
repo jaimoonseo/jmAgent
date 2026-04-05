@@ -86,6 +86,9 @@ def temp_plugin_dir():
 @pytest.fixture
 def plugin_metadata_file(temp_plugin_dir):
     """Create a test plugin metadata file."""
+    pytest.importorskip("yaml")
+    import yaml
+
     metadata = {
         "name": "test_plugin",
         "version": "1.0.0",
@@ -96,7 +99,6 @@ def plugin_metadata_file(temp_plugin_dir):
     }
     metadata_path = temp_plugin_dir / "plugin.yaml"
     with open(metadata_path, 'w') as f:
-        import yaml
         yaml.dump(metadata, f)
     return metadata_path
 
@@ -449,6 +451,9 @@ class TestSamplePlugin(Plugin):
 
     def test_load_plugin_with_dependencies(self, temp_plugin_dir):
         """Test loading plugin metadata with dependencies."""
+        pytest.importorskip("yaml")
+        import yaml
+
         # Create metadata file
         metadata = {
             "name": "dependent_plugin",
@@ -461,7 +466,6 @@ class TestSamplePlugin(Plugin):
         }
         metadata_path = temp_plugin_dir / "plugin.yaml"
         with open(metadata_path, 'w') as f:
-            import yaml
             yaml.dump(metadata, f)
 
         loader = PluginLoader(str(temp_plugin_dir))
@@ -550,8 +554,12 @@ class TestPluginIntegration:
 
         results = await manager.execute_hook("test_hook")
         assert len(results) == 2
-        # Results should include output from both plugins
-        assert any(r["hook"] == "test_hook" for r in results if isinstance(r, dict))
+        # Results should all be dicts with standard format
+        assert all(isinstance(r, dict) for r in results)
+        assert all("plugin_name" in r and "status" in r for r in results)
+        assert all(r["status"] in ("success", "failed") for r in results)
+        # Both plugins should have succeeded
+        assert all(r["status"] == "success" for r in results)
 
     @pytest.mark.asyncio
     async def test_graceful_degradation_on_plugin_failure(self):

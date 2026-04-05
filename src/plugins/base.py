@@ -73,8 +73,10 @@ class Plugin(ABC):
             Plugin-specific return value. Can be any type.
 
         Raises:
-            Exception: Plugins may raise exceptions which will be
-                      handled by PluginManager with graceful degradation.
+            PluginExecutionError: Plugins should raise this exception (or
+                                 subclasses) on execution failures. Other
+                                 exceptions will be caught and handled by
+                                 PluginManager with graceful degradation.
         """
         pass
 

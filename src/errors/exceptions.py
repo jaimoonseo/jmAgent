@@ -37,3 +37,21 @@ class AuthenticationError(JmAgentError):
     """Authentication failed or credentials are invalid."""
 
     pass
+
+
+class PluginError(JmAgentError):
+    """Base exception for plugin-related errors."""
+
+    pass
+
+
+class PluginValidationError(PluginError):
+    """Raised when a plugin fails validation checks."""
+
+    pass
+
+
+class PluginExecutionError(PluginError):
+    """Raised when a plugin fails during execution."""
+
+    pass

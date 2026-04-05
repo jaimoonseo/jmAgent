@@ -4,9 +4,10 @@ import json
 import os
 import pytest
 import tempfile
-import yaml
 from pathlib import Path
 from typing import Dict, Any
+
+yaml = pytest.importorskip("yaml")
 
 from src.templates.loader import TemplateLoader
 from src.templates.manager import TemplateManager, Template

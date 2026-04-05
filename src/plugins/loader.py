@@ -2,10 +2,12 @@
 
 import sys
 import importlib.util
+import re
 from pathlib import Path
 from typing import List, Type, Optional, Dict, Any
 
 from src.logging.logger import StructuredLogger
+from src.errors.exceptions import PluginValidationError
 from src.plugins.base import Plugin
 
 
@@ -74,6 +76,64 @@ class PluginLoader:
 
         return plugin_classes
 
+    def _validate_plugin_class(self, plugin_class: Type[Plugin]) -> None:
+        """Validate that a plugin class implements required interface.
+
+        Args:
+            plugin_class: Plugin class to validate.
+
+        Raises:
+            PluginValidationError: If validation fails.
+        """
+        # Check required methods exist
+        required_methods = ["enable", "disable", "is_enabled", "execute"]
+        for method in required_methods:
+            if not hasattr(plugin_class, method):
+                raise PluginValidationError(
+                    f"Plugin {plugin_class.__name__} missing required method: {method}"
+                )
+
+        # Check required metadata attributes
+        required_attrs = ["name", "version", "description", "author"]
+        for attr in required_attrs:
+            if not hasattr(plugin_class, attr):
+                raise PluginValidationError(
+                    f"Plugin {plugin_class.__name__} missing required attribute: {attr}"
+                )
+
+        # Validate metadata values
+        name = getattr(plugin_class, "name", "")
+        version = getattr(plugin_class, "version", "")
+        description = getattr(plugin_class, "description", "")
+        author = getattr(plugin_class, "author", "")
+
+        if not isinstance(name, str) or not name:
+            raise PluginValidationError(
+                f"Plugin {plugin_class.__name__} has invalid name: {name}"
+            )
+
+        if not isinstance(version, str) or not version:
+            raise PluginValidationError(
+                f"Plugin {plugin_class.__name__} has invalid version: {version}"
+            )
+
+        # Validate semantic versioning format (major.minor.patch)
+        if not re.match(r"^\d+\.\d+\.\d+", version):
+            raise PluginValidationError(
+                f"Plugin {plugin_class.__name__} has invalid version format '{version}' "
+                "(expected semantic versioning: major.minor.patch)"
+            )
+
+        if not isinstance(description, str) or not description:
+            raise PluginValidationError(
+                f"Plugin {plugin_class.__name__} has invalid description: {description}"
+            )
+
+        if not isinstance(author, str) or not author:
+            raise PluginValidationError(
+                f"Plugin {plugin_class.__name__} has invalid author: {author}"
+            )
+
     def _load_plugin_module(self, py_file: Path) -> List[Type[Plugin]]:
         """Load a single plugin module and extract Plugin classes.
 
@@ -114,15 +174,30 @@ class PluginLoader:
                     issubclass(attr, Plugin) and
                     attr is not Plugin
                 ):
-                    plugin_classes.append(attr)
-                    logger.debug(
-                        f"Discovered plugin class {attr_name}",
-                        extra={
-                            "module": py_file.name,
-                            "class": attr_name
-                        }
-                    )
+                    try:
+                        # Validate the plugin class
+                        self._validate_plugin_class(attr)
+                        plugin_classes.append(attr)
+                        logger.debug(
+                            f"Discovered plugin class {attr_name}",
+                            extra={
+                                "module": py_file.name,
+                                "class": attr_name
+                            }
+                        )
+                    except PluginValidationError as e:
+                        logger.warning(
+                            f"Plugin validation failed: {attr_name}",
+                            extra={
+                                "module": py_file.name,
+                                "class": attr_name,
+                                "error": str(e)
+                            }
+                        )
 
+        except PluginValidationError:
+            # Re-raise validation errors during discovery
+            raise
         except Exception as e:
             logger.error(
                 f"Error loading plugin module {py_file.name}",

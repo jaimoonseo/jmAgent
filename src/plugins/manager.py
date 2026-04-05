@@ -136,7 +136,11 @@ class PluginManager:
             **kwargs: Keyword arguments to pass to plugins.
 
         Returns:
-            List of results from each plugin that executed.
+            List of result dicts from each plugin that executed. Each dict has:
+            - plugin_name: str - name of the plugin
+            - status: "success" | "failed"
+            - result: Any - plugin's return value (None if failed)
+            - error: str | None - error message if failed, None otherwise
         """
         results: List[Any] = []
 
@@ -151,7 +155,13 @@ class PluginManager:
 
             try:
                 result = await plugin.execute(hook, *args, **kwargs)
-                results.append(result)
+                # Wrap result in consistent dict format
+                results.append({
+                    "plugin_name": plugin_name,
+                    "status": "success",
+                    "result": result,
+                    "error": None
+                })
                 logger.debug(
                     f"Plugin hook executed: {plugin_name}",
                     extra={"plugin": plugin_name, "hook": hook}
@@ -166,12 +176,12 @@ class PluginManager:
                         "error": str(e)
                     }
                 )
-                # Add error result so caller knows about failures
+                # Add error result in consistent dict format
                 results.append({
-                    "plugin": plugin_name,
-                    "hook": hook,
-                    "error": str(e),
-                    "status": "failed"
+                    "plugin_name": plugin_name,
+                    "status": "failed",
+                    "result": None,
+                    "error": str(e)
                 })
 
         return results
