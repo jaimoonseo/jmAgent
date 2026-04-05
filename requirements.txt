@@ -1,5 +1,22 @@
-boto3>=1.28.0
-python-dotenv>=1.0.0
-pydantic>=2.0.0
-PyGithub>=2.0.0
-PyYAML>=6.0
+# Core AWS Dependencies
+boto3>=1.28.0                  # AWS SDK for Python (Bedrock API)
+python-dotenv>=1.0.0           # Environment variable management
+
+# Data Validation & Serialization
+pydantic>=2.0.0                # Data validation using Python type annotations
+PyYAML>=6.0                    # YAML parsing for templates and config
+
+# Integrations
+PyGithub>=2.0.0                # GitHub API client for integrations
+
+# Optional: Testing & Development
+pytest>=7.0.0                  # Testing framework
+pytest-asyncio>=0.21.0         # Pytest plugin for asyncio support
+pytest-cov>=4.0.0              # Coverage reporting for pytest
+black>=23.0.0                  # Code formatter
+flake8>=6.0.0                  # Code linter
+mypy>=1.0.0                    # Type checker
+
+# Optional: Documentation
+sphinx>=5.0.0                  # Documentation generator
+sphinx-rtd-theme>=1.0.0        # ReadTheDocs theme
