@@ -201,6 +201,51 @@ jm test --files "auth.py,utils.py" --framework pytest --coverage 0.9
 
 For detailed information, see [docs/PHASE3_FEATURES.md](docs/PHASE3_FEATURES.md).
 
+## Phase 4: Configuration, Monitoring & Management
+
+Phase 4 introduces enterprise-grade management and monitoring capabilities including configuration management, metrics tracking, audit logging, plugin system, and template customization.
+
+### Key Features
+
+- **Configuration Management** - View, update, and reset settings via CLI
+- **Metrics & Monitoring** - Track performance metrics and estimated costs
+- **Audit Logging** - Complete audit trail of all actions with SQLite persistence
+- **Plugin System** - Extend functionality with custom plugins
+- **Template System** - Customize prompts for each action type
+
+### Quick Examples
+
+```bash
+# Configuration Management
+jm config show                          # View all settings
+jm config set --key jm_default_model --value sonnet  # Change default model
+jm config show --key jm_temperature     # View specific setting
+
+# Metrics & Monitoring
+jm metrics summary                      # View performance metrics
+jm metrics summary --action generate    # Filter by action type
+jm metrics cost                         # Show cost breakdown
+jm metrics reset                        # Clear all metrics
+
+# Audit Logging
+jm audit log                            # Show recent audit logs
+jm audit log --limit 20                 # Show last 20 logs
+jm audit search --action generate       # Search by action
+jm audit search --user alice --status success  # Search with filters
+
+# Plugin Management
+jm plugin list                          # List all plugins
+jm plugin list --enabled                # Show only enabled plugins
+jm plugin enable --name github_integration  # Enable a plugin
+
+# Template Management
+jm template list                        # List available templates
+jm template list --action generate      # Templates for specific action
+jm template use --action generate --name custom_gen  # Use custom template
+```
+
+For comprehensive details, see [docs/PHASE4_FEATURES.md](docs/PHASE4_FEATURES.md).
+
 ## Global Options
 
 - `--model {haiku,sonnet,opus}` - LLM model (default: haiku)
