@@ -12,6 +12,7 @@ from src.prompts.context_enhancer import ContextEnhancer
 from src.streaming.stream_handler import StreamCollector
 from src.formatting.formatter import CodeFormatter
 from src.monitoring.metrics import MetricsCollector
+from src.audit.logger import AuditLogger
 
 logger = get_logger(__name__)
 
@@ -44,6 +45,7 @@ class JmAgent:
         temperature: float = 0.2,
         max_tokens: int = 4096,
         project_context: Optional[ProjectContext] = None,
+        user: str = "anonymous",
     ):
         """
         Initialize JmAgent.
@@ -54,6 +56,7 @@ class JmAgent:
             temperature: Sampling temperature (0.0-1.0)
             max_tokens: Maximum output tokens
             project_context: Optional project context for improved code generation
+            user: Username for audit logging (default: 'anonymous')
         """
         self.model = model
         self.model_id = MODELS.get(model, MODELS["haiku"])
@@ -65,6 +68,7 @@ class JmAgent:
         self.project_context = project_context
         self.formatter = CodeFormatter()
         self.metrics = MetricsCollector()
+        self.audit_logger = AuditLogger(user=user)
 
         logger.info(f"Initialized JmAgent with model: {self.model}")
 
@@ -175,23 +179,49 @@ class JmAgent:
         Returns:
             GenerateResponse with generated code
         """
+        start_time = time.time()
         full_prompt = prompt
         if language:
             full_prompt = f"Generate code in {language}:\n{prompt}"
         if context_files:
             full_prompt += f"\n\nConsider the style of these files: {', '.join(context_files)}"
 
-        response = await self._call_bedrock("generate", full_prompt)
+        try:
+            response = await self._call_bedrock("generate", full_prompt)
 
-        code = response.content
-        if format_code:
-            code = self.formatter.format(code, language=language)
+            code = response.content
+            if format_code:
+                code = self.formatter.format(code, language=language)
 
-        return GenerateResponse(
-            code=code,
-            language=language,
-            tokens_used=response.usage
-        )
+            # Log successful action to audit
+            duration = time.time() - start_time
+            self.audit_logger.log_action(
+                action_type="generate",
+                input_data={"prompt": prompt, "language": language, "context_files": context_files},
+                output_data={"code": code, "language": language},
+                status="success",
+                duration=duration,
+                tokens_used=response.usage,
+                metadata={"model": self.model, "temperature": self.temperature}
+            )
+
+            return GenerateResponse(
+                code=code,
+                language=language,
+                tokens_used=response.usage
+            )
+        except Exception as e:
+            duration = time.time() - start_time
+            self.audit_logger.log_action(
+                action_type="generate",
+                input_data={"prompt": prompt, "language": language, "context_files": context_files},
+                output_data=None,
+                status="failure",
+                error_message=str(e),
+                duration=duration,
+                metadata={"model": self.model, "temperature": self.temperature}
+            )
+            raise
 
     async def generate_streaming(
         self,
@@ -324,21 +354,47 @@ class JmAgent:
         Returns:
             GenerateResponse with refactored code
         """
+        start_time = time.time()
         full_prompt = f"Refactor this code:\n\n{code}\n\nRequirements: {requirements}"
         if language:
             full_prompt = f"{full_prompt}\n\nLanguage: {language}"
 
-        response = await self._call_bedrock("refactor", full_prompt)
+        try:
+            response = await self._call_bedrock("refactor", full_prompt)
 
-        refactored_code = response.content
-        if format_code:
-            refactored_code = self.formatter.format(refactored_code, language=language)
+            refactored_code = response.content
+            if format_code:
+                refactored_code = self.formatter.format(refactored_code, language=language)
 
-        return GenerateResponse(
-            code=refactored_code,
-            language=language,
-            tokens_used=response.usage
-        )
+            # Log successful action to audit
+            duration = time.time() - start_time
+            self.audit_logger.log_action(
+                action_type="refactor",
+                input_data={"code": code, "requirements": requirements, "language": language},
+                output_data={"refactored_code": refactored_code, "language": language},
+                status="success",
+                duration=duration,
+                tokens_used=response.usage,
+                metadata={"model": self.model, "temperature": self.temperature}
+            )
+
+            return GenerateResponse(
+                code=refactored_code,
+                language=language,
+                tokens_used=response.usage
+            )
+        except Exception as e:
+            duration = time.time() - start_time
+            self.audit_logger.log_action(
+                action_type="refactor",
+                input_data={"code": code, "requirements": requirements, "language": language},
+                output_data=None,
+                status="failure",
+                error_message=str(e),
+                duration=duration,
+                metadata={"model": self.model, "temperature": self.temperature}
+            )
+            raise
 
     async def refactor_multiple(
         self,
@@ -440,15 +496,41 @@ class JmAgent:
         Returns:
             GenerateResponse with test code
         """
+        start_time = time.time()
         full_prompt = f"Generate {test_framework} tests for this code with {target_coverage*100}% coverage:\n\n{code}"
 
-        response = await self._call_bedrock("test", full_prompt)
+        try:
+            response = await self._call_bedrock("test", full_prompt)
 
-        return GenerateResponse(
-            code=response.content,
-            language=None,
-            tokens_used=response.usage
-        )
+            # Log successful action to audit
+            duration = time.time() - start_time
+            self.audit_logger.log_action(
+                action_type="test",
+                input_data={"code": code, "test_framework": test_framework, "target_coverage": target_coverage},
+                output_data={"test_code": response.content},
+                status="success",
+                duration=duration,
+                tokens_used=response.usage,
+                metadata={"model": self.model, "temperature": self.temperature}
+            )
+
+            return GenerateResponse(
+                code=response.content,
+                language=None,
+                tokens_used=response.usage
+            )
+        except Exception as e:
+            duration = time.time() - start_time
+            self.audit_logger.log_action(
+                action_type="test",
+                input_data={"code": code, "test_framework": test_framework, "target_coverage": target_coverage},
+                output_data=None,
+                status="failure",
+                error_message=str(e),
+                duration=duration,
+                metadata={"model": self.model, "temperature": self.temperature}
+            )
+            raise
 
     async def test_multiple(
         self,
@@ -495,13 +577,39 @@ class JmAgent:
         Returns:
             String explanation
         """
+        start_time = time.time()
         full_prompt = f"Explain this code:\n\n{code}"
         if language:
             full_prompt = f"{full_prompt}\n\nLanguage: {language}"
 
-        response = await self._call_bedrock("explain", full_prompt)
+        try:
+            response = await self._call_bedrock("explain", full_prompt)
 
-        return response.content
+            # Log successful action to audit
+            duration = time.time() - start_time
+            self.audit_logger.log_action(
+                action_type="explain",
+                input_data={"code": code, "language": language},
+                output_data={"explanation": response.content},
+                status="success",
+                duration=duration,
+                tokens_used=response.usage,
+                metadata={"model": self.model, "temperature": self.temperature}
+            )
+
+            return response.content
+        except Exception as e:
+            duration = time.time() - start_time
+            self.audit_logger.log_action(
+                action_type="explain",
+                input_data={"code": code, "language": language},
+                output_data=None,
+                status="failure",
+                error_message=str(e),
+                duration=duration,
+                metadata={"model": self.model, "temperature": self.temperature}
+            )
+            raise
 
     async def fix_bug(
         self,
@@ -520,17 +628,43 @@ class JmAgent:
         Returns:
             GenerateResponse with fixed code
         """
+        start_time = time.time()
         full_prompt = f"Fix this code:\n\n{code}\n\nError:\n{error_message}"
         if context:
             full_prompt = f"{full_prompt}\n\nContext:\n{context}"
 
-        response = await self._call_bedrock("fix", full_prompt)
+        try:
+            response = await self._call_bedrock("fix", full_prompt)
 
-        return GenerateResponse(
-            code=response.content,
-            language=None,
-            tokens_used=response.usage
-        )
+            # Log successful action to audit
+            duration = time.time() - start_time
+            self.audit_logger.log_action(
+                action_type="fix",
+                input_data={"code": code, "error_message": error_message, "context": context},
+                output_data={"fixed_code": response.content},
+                status="success",
+                duration=duration,
+                tokens_used=response.usage,
+                metadata={"model": self.model, "temperature": self.temperature}
+            )
+
+            return GenerateResponse(
+                code=response.content,
+                language=None,
+                tokens_used=response.usage
+            )
+        except Exception as e:
+            duration = time.time() - start_time
+            self.audit_logger.log_action(
+                action_type="fix",
+                input_data={"code": code, "error_message": error_message, "context": context},
+                output_data=None,
+                status="failure",
+                error_message=str(e),
+                duration=duration,
+                metadata={"model": self.model, "temperature": self.temperature}
+            )
+            raise
 
     async def chat(self, message: str) -> str:
         """
@@ -542,19 +676,46 @@ class JmAgent:
         Returns:
             Assistant response
         """
-        response = await self._call_bedrock("chat", message, use_history=True)
+        start_time = time.time()
 
-        # Update conversation history
-        self.conversation_history.append({
-            "role": "user",
-            "content": message
-        })
-        self.conversation_history.append({
-            "role": "assistant",
-            "content": response.content
-        })
+        try:
+            response = await self._call_bedrock("chat", message, use_history=True)
 
-        return response.content
+            # Update conversation history
+            self.conversation_history.append({
+                "role": "user",
+                "content": message
+            })
+            self.conversation_history.append({
+                "role": "assistant",
+                "content": response.content
+            })
+
+            # Log successful action to audit
+            duration = time.time() - start_time
+            self.audit_logger.log_action(
+                action_type="chat",
+                input_data={"message": message},
+                output_data={"response": response.content},
+                status="success",
+                duration=duration,
+                tokens_used=response.usage,
+                metadata={"model": self.model, "temperature": self.temperature}
+            )
+
+            return response.content
+        except Exception as e:
+            duration = time.time() - start_time
+            self.audit_logger.log_action(
+                action_type="chat",
+                input_data={"message": message},
+                output_data=None,
+                status="failure",
+                error_message=str(e),
+                duration=duration,
+                metadata={"model": self.model, "temperature": self.temperature}
+            )
+            raise
 
     def reset_history(self) -> None:
         """Reset conversation history."""
@@ -583,3 +744,12 @@ class JmAgent:
         """Clear all collected metrics."""
         self.metrics.clear()
         logger.info("Metrics cleared")
+
+    def get_audit_logger(self) -> AuditLogger:
+        """
+        Get the audit logger instance.
+
+        Returns:
+            AuditLogger instance
+        """
+        return self.audit_logger
