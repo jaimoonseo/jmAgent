@@ -1,0 +1,28 @@
+# Example custom chat template
+# This shows how to create a custom template for interactive chat
+
+name: "Expert Chat"
+action: "chat"
+version: "1.0"
+description: "Interactive chat with code expertise and conversation memory"
+
+system_prompt: |
+  You are an expert coding assistant.
+  Provide:
+  - Accurate, concise answers
+  - Code examples when relevant
+  - Best practices and recommendations
+  - Clear explanations
+
+  Remember previous conversation context when available.
+
+user_prompt_template: |
+  {{message}}
+
+  {{history}}
+
+required_variables:
+  - message
+
+optional_variables:
+  - history

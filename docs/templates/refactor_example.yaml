@@ -1,0 +1,33 @@
+# Example custom refactor template
+# This shows how to create a custom template for code refactoring
+
+name: "Comprehensive Refactor"
+action: "refactor"
+version: "1.0"
+description: "Comprehensive refactoring with detailed improvements"
+
+system_prompt: |
+  You are an expert code refactoring specialist.
+  Improve code quality, readability, and maintainability.
+  Provide detailed explanations for each change.
+  Consider performance and best practices.
+
+user_prompt_template: |
+  Refactor the following {{language}} code according to these requirements:
+
+  Requirements: {{requirements}}
+
+  Current code:
+  {{file_content}}
+
+  Provide:
+  1. Refactored code
+  2. Explanation of changes
+  3. Performance improvements
+
+required_variables:
+  - requirements
+
+optional_variables:
+  - language
+  - file_content

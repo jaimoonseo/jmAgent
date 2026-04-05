@@ -1,0 +1,41 @@
+# Example custom fix template
+# This shows how to create a custom template for bug fixing
+
+name: "Comprehensive Fix"
+action: "fix"
+version: "1.0"
+description: "Comprehensive bug fixing with root cause analysis"
+
+system_prompt: |
+  You are an expert debugging specialist.
+  For each bug:
+  1. Analyze the root cause
+  2. Identify the fix
+  3. Explain the solution
+  4. Suggest prevention strategies
+  5. Provide test cases
+
+user_prompt_template: |
+  Fix this bug in {{language}} code:
+
+  Error: {{error}}
+
+  Code:
+  {{file_content}}
+
+  Context: {{context}}
+
+  Provide:
+  1. Root cause analysis
+  2. Fixed code
+  3. Explanation of the fix
+  4. Prevention strategies
+  5. Test cases
+
+required_variables:
+  - error
+
+optional_variables:
+  - language
+  - file_content
+  - context

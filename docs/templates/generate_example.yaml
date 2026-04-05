@@ -1,0 +1,24 @@
+# Example custom generate template
+# This shows how to create a custom template for code generation
+
+name: "Fast Generate"
+action: "generate"
+version: "1.0"
+description: "Fast code generation with minimal documentation"
+
+system_prompt: |
+  You are a code generation expert.
+  Generate clean, working code quickly.
+  Prioritize speed over documentation.
+
+user_prompt_template: |
+  Generate {{language}} code for: {{prompt}}
+
+  Context: {{context}}
+
+required_variables:
+  - prompt
+
+optional_variables:
+  - language
+  - context

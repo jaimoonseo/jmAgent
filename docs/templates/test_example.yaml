@@ -1,0 +1,37 @@
+# Example custom test template
+# This shows how to create a custom template for test generation
+
+name: "Comprehensive Test"
+action: "test"
+version: "1.0"
+description: "Generate comprehensive tests with edge cases and error handling"
+
+system_prompt: |
+  You are an expert test engineer.
+  Generate comprehensive test cases covering:
+  - Normal cases
+  - Edge cases
+  - Error conditions
+  - Performance scenarios
+
+  Follow the {{framework}} best practices.
+
+user_prompt_template: |
+  Generate {{framework}} tests for this code:
+
+  {{file_content}}
+
+  Coverage target: {{coverage}}%
+
+  Include:
+  1. Unit tests for each function
+  2. Integration tests
+  3. Edge case tests
+  4. Error handling tests
+
+required_variables: []
+
+optional_variables:
+  - file_content
+  - framework
+  - coverage
