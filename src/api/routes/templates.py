@@ -209,7 +209,7 @@ async def get_template_detail(
     except Exception as e:
         logger.error(
             "Error retrieving template detail",
-            extra={"error": str(e), "template_name": name},
+            extra={"error": str(e), "template_name": id},
         )
         raise HTTPException(status_code=500, detail="Failed to retrieve template details")
 

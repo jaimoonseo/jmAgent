@@ -1,6 +1,6 @@
 """FastAPI application factory and setup."""
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.exception_handlers import http_exception_handler
@@ -51,6 +51,27 @@ def create_app() -> FastAPI:
     app.add_middleware(RequestLoggingMiddleware)
 
     # Register exception handlers
+    @app.exception_handler(HTTPException)
+    async def http_exception_handler_custom(request: Request, exc: HTTPException):
+        """Handle FastAPI HTTPException with consistent format."""
+        logger.warning(
+            "HTTP Exception",
+            extra={
+                "path": request.url.path,
+                "method": request.method,
+                "status_code": exc.status_code,
+                "detail": exc.detail,
+            },
+        )
+        return JSONResponse(
+            status_code=exc.status_code,
+            content={
+                "success": False,
+                "error": exc.detail,
+                "error_code": "HTTP_ERROR",
+            },
+        )
+
     @app.exception_handler(APIException)
     async def api_exception_handler(request: Request, exc: APIException):
         """Handle custom API exceptions."""

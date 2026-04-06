@@ -126,15 +126,13 @@ def verify_token(
 
 
 def get_current_user(
-    token: str = Depends(HTTPBearer()),
-    settings: Optional[JwtSettings] = None,
+    token: HTTPAuthorizationCredentials = Depends(HTTPBearer()),
 ) -> Dict[str, Any]:
     """
     FastAPI dependency to get the current user from Bearer token.
 
     Args:
         token: Bearer token from HTTPBearer
-        settings: JWT settings (uses default if not provided)
 
     Returns:
         Token payload with user_id and agent_id
@@ -142,8 +140,7 @@ def get_current_user(
     Raises:
         HTTPException: If token is invalid or missing
     """
-    if settings is None:
-        settings = JwtSettings()
+    settings = JwtSettings()
 
     try:
         payload = verify_token(token.credentials, settings=settings)

@@ -229,7 +229,7 @@ async def update_config(
     tags=["Config"],
 )
 async def replace_all_config(
-    request: Dict[str, Any],
+    request: UpdateAllConfigRequest,
     current_user: Dict[str, Any] = Depends(get_current_user),
 ):
     """
@@ -239,8 +239,11 @@ async def replace_all_config(
     Returns the count of settings replaced.
     """
     try:
+        # Convert Pydantic model to dict
+        request_dict = request.model_dump()
+
         # Validate all provided keys
-        for key in request.keys():
+        for key in request_dict.keys():
             if key not in SETTING_DEFAULTS and key not in get_all_settings():
                 logger.warning(
                     "Attempted to set invalid configuration key",
@@ -256,13 +259,13 @@ async def replace_all_config(
 
         # Clear and replace all overrides
         _config_overrides.clear()
-        _config_overrides.update(request)
+        _config_overrides.update(request_dict)
 
         logger.info(
             "All configuration settings replaced",
             extra={
                 "user_id": current_user.get("user_id"),
-                "count": len(request),
+                "count": len(request_dict),
             },
         )
 
@@ -270,7 +273,7 @@ async def replace_all_config(
             success=True,
             data=ReplacedConfigResponse(
                 replaced=True,
-                count=len(request),
+                count=len(request_dict),
             ),
         )
     except HTTPException:
