@@ -284,3 +284,17 @@ class AuditStorage:
         conn.close()
 
         return deleted_count
+
+    def clear(self) -> None:
+        """
+        Clear all audit records.
+
+        Deletes all records from the audit_logs table.
+        """
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+
+        cursor.execute("DELETE FROM audit_logs")
+
+        conn.commit()
+        conn.close()

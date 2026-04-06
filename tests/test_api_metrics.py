@@ -290,13 +290,61 @@ class TestMetricsHistoryEndpoint:
             assert "success" in metric
 
 
+class TestMetricsByModelEndpoint:
+    """Tests for GET /api/v1/metrics/by-model endpoint."""
+
+    def test_get_metrics_by_model_success(self, client, auth_token):
+        """Test successful retrieval of metrics by model."""
+        response = client.get(
+            "/api/v1/metrics/by-model",
+            headers=get_auth_headers(auth_token),
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["success"] is True
+        assert "data" in data
+        metrics = data["data"]
+
+        assert "by_model" in metrics
+        assert "haiku" in metrics["by_model"]
+        assert "sonnet" in metrics["by_model"]
+        assert "opus" in metrics["by_model"]
+
+    def test_get_metrics_by_model_without_auth(self, client):
+        """Test that by-model metrics requires authentication."""
+        response = client.get(
+            "/api/v1/metrics/by-model",
+        )
+        assert response.status_code == 401
+
+    def test_get_metrics_by_model_structure(self, client, auth_token):
+        """Test that by-model response has correct structure."""
+        response = client.get(
+            "/api/v1/metrics/by-model",
+            headers=get_auth_headers(auth_token),
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+        by_model = data["data"]["by_model"]
+
+        for model_name, model_metrics in by_model.items():
+            assert "count" in model_metrics
+            assert "success_count" in model_metrics
+            assert "failure_count" in model_metrics
+            assert "success_rate" in model_metrics
+            assert "avg_response_time" in model_metrics
+            assert "total_tokens" in model_metrics
+
+
 class TestResetMetricsEndpoint:
-    """Tests for POST /api/v1/metrics/reset endpoint."""
+    """Tests for DELETE /api/v1/metrics endpoint."""
 
     def test_reset_metrics_success(self, client, auth_token):
-        """Test successful reset of all metrics."""
-        response = client.post(
-            "/api/v1/metrics/reset",
+        """Test successful deletion of all metrics."""
+        response = client.delete(
+            "/api/v1/metrics",
             headers=get_auth_headers(auth_token),
         )
 
@@ -307,15 +355,15 @@ class TestResetMetricsEndpoint:
         assert data["data"]["cleared_count"] > 0
 
     def test_reset_metrics_without_auth(self, client):
-        """Test that reset requires authentication."""
-        response = client.post("/api/v1/metrics/reset")
+        """Test that delete requires authentication."""
+        response = client.delete("/api/v1/metrics")
         assert response.status_code == 401
 
     def test_reset_metrics_clears_data(self, client, auth_token):
-        """Test that reset actually clears metrics."""
-        # Reset metrics
-        reset_response = client.post(
-            "/api/v1/metrics/reset",
+        """Test that delete actually clears metrics."""
+        # Delete metrics
+        reset_response = client.delete(
+            "/api/v1/metrics",
             headers=get_auth_headers(auth_token),
         )
         assert reset_response.status_code == 200

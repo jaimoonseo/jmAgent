@@ -341,14 +341,63 @@ class TestAuditExportEndpoint:
         assert response.status_code in (200, 400)
 
 
+class TestAuditSummaryEndpoint:
+    """Tests for GET /api/v1/audit/summary endpoint."""
+
+    def test_audit_summary_success(self, client, auth_token):
+        """Test successful retrieval of audit summary."""
+        response = client.get(
+            "/api/v1/audit/summary",
+            headers=get_auth_headers(auth_token),
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["success"] is True
+        assert "data" in data
+        summary = data["data"]
+
+        assert "total_logs" in summary
+        assert "actions" in summary
+        assert "success_rate" in summary
+        assert "error_rate" in summary
+
+    def test_audit_summary_without_auth(self, client):
+        """Test that summary requires authentication."""
+        response = client.get(
+            "/api/v1/audit/summary",
+        )
+        assert response.status_code == 401
+
+    def test_audit_summary_with_no_logs(self, client, auth_token, monkeypatch):
+        """Test summary with no audit logs."""
+        # Mock empty audit logs
+        import src.api.routes.audit as audit_module
+
+        def mock_get_all_logs():
+            return []
+
+        monkeypatch.setattr(audit_module, "_get_all_logs", mock_get_all_logs)
+
+        response = client.get(
+            "/api/v1/audit/summary",
+            headers=get_auth_headers(auth_token),
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["data"]["total_logs"] == 0
+        assert data["data"]["success_rate"] == 0.0
+        assert data["data"]["error_rate"] == 0.0
+
+
 class TestAuditClearEndpoint:
-    """Tests for POST /api/v1/audit/clear endpoint."""
+    """Tests for DELETE /api/v1/audit/logs endpoint."""
 
     def test_clear_audit_logs_success(self, client, admin_token):
-        """Test successful clearing of audit logs."""
-        response = client.post(
-            "/api/v1/audit/clear",
-            json={"confirm": True},
+        """Test successful deletion of audit logs."""
+        response = client.delete(
+            "/api/v1/audit/logs",
             headers=get_auth_headers(admin_token),
         )
 
@@ -359,41 +408,37 @@ class TestAuditClearEndpoint:
         assert data["data"]["count"] >= 0
 
     def test_clear_audit_logs_without_auth(self, client):
-        """Test that clear requires authentication."""
-        response = client.post(
-            "/api/v1/audit/clear",
-            json={"confirm": True},
+        """Test that delete requires authentication."""
+        response = client.delete(
+            "/api/v1/audit/logs",
         )
         assert response.status_code == 401
 
     def test_clear_audit_logs_non_admin_forbidden(self, client, auth_token):
-        """Test that non-admin users cannot clear logs."""
-        response = client.post(
-            "/api/v1/audit/clear",
-            json={"confirm": True},
+        """Test that non-admin users cannot delete logs."""
+        response = client.delete(
+            "/api/v1/audit/logs",
             headers=get_auth_headers(auth_token),
         )
 
         # Should be forbidden for non-admin
-        assert response.status_code == 401
+        assert response.status_code == 403
 
     def test_clear_audit_logs_without_confirmation(self, client, admin_token):
-        """Test that clearing requires confirmation."""
-        response = client.post(
-            "/api/v1/audit/clear",
-            json={"confirm": False},
+        """Test that deleting logs works without confirmation request."""
+        response = client.delete(
+            "/api/v1/audit/logs",
             headers=get_auth_headers(admin_token),
         )
 
-        # Should require confirmation=true
-        assert response.status_code == 400
+        # DELETE endpoint doesn't require confirmation in request body
+        assert response.status_code == 200
 
     def test_clear_audit_logs_actually_clears(self, client, auth_token, admin_token):
-        """Test that clear actually removes all logs."""
-        # Clear logs
-        client.post(
-            "/api/v1/audit/clear",
-            json={"confirm": True},
+        """Test that delete actually removes all logs."""
+        # Delete logs
+        client.delete(
+            "/api/v1/audit/logs",
             headers=get_auth_headers(admin_token),
         )
 

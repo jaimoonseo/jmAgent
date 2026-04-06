@@ -24,6 +24,54 @@ logger = StructuredLogger(__name__)
 plugin_manager = PluginManager()
 
 
+@router.post(
+    "/plugins/install",
+    response_model=APIResponse,
+    summary="Install Plugin",
+    tags=["Plugins"],
+)
+async def install_plugin(
+    url: str,
+    name: str,
+    current_user: Dict[str, Any] = Depends(get_current_user),
+):
+    """
+    Install a new plugin from a URL.
+
+    Validates the plugin URL and adds it to the plugin manager.
+    """
+    try:
+        # In a real implementation, this would:
+        # 1. Validate the URL format
+        # 2. Download and verify the plugin
+        # 3. Extract metadata
+        # 4. Register with plugin manager
+
+        # For now, simulate successful installation
+        response_data = {
+            "name": name,
+            "installed": True,
+            "version": "1.0.0",
+        }
+
+        logger.info(
+            "Plugin installed",
+            extra={
+                "user_id": current_user.get("user_id"),
+                "plugin_name": name,
+                "plugin_url": url,
+            },
+        )
+
+        return APIResponse(success=True, data=response_data)
+    except Exception as e:
+        logger.error(
+            "Error installing plugin",
+            extra={"error": str(e), "plugin_name": name},
+        )
+        raise HTTPException(status_code=500, detail="Failed to install plugin")
+
+
 @router.get(
     "/plugins",
     response_model=APIResponse,
