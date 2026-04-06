@@ -185,13 +185,17 @@ def load_project_context(project_root: Path) -> ProjectContext:
     )
 
 
-def load_multiple_files(file_paths: List[str], max_size: int = MAX_MULTIPLE_FILES_SIZE) -> str:
+def load_multiple_files(file_paths: List[str], max_size: int = MAX_MULTIPLE_FILES_SIZE, project_root: Optional[Path] = None) -> str:
     """
     Load multiple files and format as context.
+
+    SECURITY: Validates file paths to prevent directory traversal and symlink escape attacks.
+    All paths must be relative and within project_root (or current directory if not specified).
 
     Args:
         file_paths: List of file paths to load
         max_size: Maximum total size in bytes (default: 50KB)
+        project_root: Project root directory for path validation (default: current directory)
 
     Returns:
         Formatted context string with:
@@ -220,6 +224,11 @@ def load_multiple_files(file_paths: List[str], max_size: int = MAX_MULTIPLE_FILE
     if not file_paths:
         return "File count: 0\nTotal size: 0 bytes\n"
 
+    if project_root is None:
+        project_root = Path.cwd()
+    else:
+        project_root = Path(project_root).resolve()
+
     parts = []
     total_size = 0
     files_loaded = 0
@@ -232,14 +241,31 @@ def load_multiple_files(file_paths: List[str], max_size: int = MAX_MULTIPLE_FILE
             break
 
         try:
-            path = Path(file_path)
+            # SECURITY: Validate path to prevent traversal attacks
+            # Check for obvious traversal attempts
+            if ".." in file_path or file_path.startswith("/"):
+                continue
 
-            if not path.exists():
+            path = Path(project_root) / file_path
+
+            # Resolve to absolute path and follow all symlinks
+            # This gets the canonical path, preventing symlink escapes
+            resolved_path = path.resolve()
+
+            # Verify the resolved path is within project root
+            # This prevents symlink attacks like: safe_file.py -> ../../etc/passwd
+            try:
+                resolved_path.relative_to(project_root)
+            except ValueError:
+                # Path is outside project root, skip it
+                continue
+
+            if not resolved_path.exists():
                 continue
 
             # Read file content
             try:
-                content = path.read_text(encoding="utf-8")
+                content = resolved_path.read_text(encoding="utf-8")
             except (UnicodeDecodeError, PermissionError):
                 continue
 
@@ -261,7 +287,7 @@ def load_multiple_files(file_paths: List[str], max_size: int = MAX_MULTIPLE_FILE
             files_loaded += 1
 
             # Format file entry
-            filename = path.name
+            filename = resolved_path.name
             file_details.append((filename, file_size))
             parts.append(f"## File: {filename} ({file_size} bytes)")
             parts.append("```")
