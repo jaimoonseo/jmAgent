@@ -127,3 +127,54 @@ class StatusResponse(BaseModel):
         default_factory=lambda: datetime.now(timezone.utc).isoformat(),
         description="Timestamp of the status check",
     )
+
+
+class TokenPayload(BaseModel):
+    """JWT token payload."""
+
+    model_config = ConfigDict(
+        json_schema_extra={
+            "example": {
+                "user_id": "user123",
+                "agent_id": "agent456",
+                "iat": 1234567890,
+                "exp": 1234571490,
+            }
+        }
+    )
+
+    user_id: str = Field(..., description="User identifier")
+    agent_id: str = Field(..., description="Agent identifier")
+    iat: int = Field(..., description="Issued at timestamp")
+    exp: int = Field(..., description="Expiration timestamp")
+
+
+class TokenResponse(BaseModel):
+    """JWT token response."""
+
+    model_config = ConfigDict(
+        json_schema_extra={
+            "example": {
+                "success": True,
+                "data": {
+                    "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+                    "token_type": "bearer",
+                    "expires_in": 1800,
+                },
+                "error": None,
+                "error_code": None,
+            }
+        }
+    )
+
+    success: bool = Field(..., description="Whether token creation was successful")
+    data: Optional[Dict[str, Any]] = Field(
+        None,
+        description="Token data including token string and expiration",
+    )
+    error: Optional[str] = Field(None, description="Error message if applicable")
+    error_code: Optional[str] = Field(None, description="Error code if applicable")
+    timestamp: str = Field(
+        default_factory=lambda: datetime.now(timezone.utc).isoformat(),
+        description="Timestamp of the response",
+    )

@@ -10,7 +10,7 @@ import logging
 from src.logging.logger import StructuredLogger
 from src.api.config import settings
 from src.api.exceptions import APIException
-from src.api.middleware import RequestLoggingMiddleware, ErrorHandlingMiddleware
+from src.api.middleware import RequestLoggingMiddleware, ErrorHandlingMiddleware, SecurityHeadersMiddleware, RateLimitMiddleware
 from src.api.routes import health
 
 # Configure logger
@@ -44,6 +44,9 @@ def create_app() -> FastAPI:
     )
 
     # Add custom middleware (order matters - added in reverse)
+    app.add_middleware(SecurityHeadersMiddleware)
+    if settings.rate_limit_enabled:
+        app.add_middleware(RateLimitMiddleware)
     app.add_middleware(ErrorHandlingMiddleware)
     app.add_middleware(RequestLoggingMiddleware)
 

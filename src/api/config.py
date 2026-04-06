@@ -1,8 +1,10 @@
 """API Configuration management using Pydantic Settings."""
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
-from typing import List
+from pydantic import Field
+from typing import List, Optional
 import os
+import secrets
 
 
 class APISettings(BaseSettings):
@@ -28,6 +30,20 @@ class APISettings(BaseSettings):
     cors_credentials: bool = True
     cors_methods: List[str] = ["*"]
     cors_headers: List[str] = ["*"]
+
+    # JWT settings
+    jwt_secret_key: str = Field(
+        default_factory=lambda: os.getenv("JMAGENT_API_JWT_SECRET_KEY", secrets.token_urlsafe(32))
+    )
+    jwt_algorithm: str = "HS256"
+    jwt_expiration_minutes: int = 30
+
+    # API Key settings
+    api_key: Optional[str] = Field(default=None)
+
+    # Rate limiting settings
+    rate_limit_enabled: bool = True
+    rate_limit_per_minute: int = 100
 
     # Logging settings
     log_level: str = "INFO"
