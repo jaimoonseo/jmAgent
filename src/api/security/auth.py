@@ -122,7 +122,7 @@ def verify_token(
         raise InvalidTokenError("Token has expired")
     except jwt.InvalidTokenError as e:
         logger.warning("Invalid token verification attempt", extra={"error": str(e)})
-        raise InvalidTokenError(f"Invalid token: {str(e)}")
+        raise InvalidTokenError("Invalid authentication credentials")
 
 
 def get_current_user(
@@ -152,7 +152,7 @@ def get_current_user(
         logger.warning("Authentication failed", extra={"error": str(e)})
         raise HTTPException(
             status_code=401,
-            detail=str(e),
+            detail="Invalid authentication credentials",
             headers={"WWW-Authenticate": "Bearer"},
         )
 
