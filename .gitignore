@@ -90,3 +90,4 @@ temp/
 # CI/CD
 .github/workflows/*.yml.bak
 .gitlab-ci.yml.bak
+.env

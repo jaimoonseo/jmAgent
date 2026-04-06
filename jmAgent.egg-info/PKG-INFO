@@ -1,12 +1,36 @@
 Metadata-Version: 2.4
 Name: jmAgent
-Version: 0.1.0
-Summary: Personal Claude coding assistant using AWS Bedrock
-Author: jmAgent
+Version: 1.0.0
+Summary: Personal Claude coding assistant using AWS Bedrock with enterprise features
+Home-page: https://github.com/yourusername/jmAgent
+Author: jmAgent Contributors
+Author-email: contact@jmagent.local
+Keywords: claude,bedrock,code-generation,ai-assistant,aws,developer-tools
+Classifier: Development Status :: 5 - Production/Stable
+Classifier: Intended Audience :: Developers
+Classifier: License :: OSI Approved :: MIT License
+Classifier: Programming Language :: Python :: 3
+Classifier: Programming Language :: Python :: 3.10
+Classifier: Programming Language :: Python :: 3.11
+Classifier: Programming Language :: Python :: 3.12
+Classifier: Operating System :: OS Independent
+Classifier: Topic :: Software Development :: Code Generators
+Classifier: Topic :: Software Development :: Libraries :: Python Modules
 Requires-Python: >=3.10
+Description-Content-Type: text/markdown
+License-File: LICENSE
 Requires-Dist: boto3>=1.28.0
 Requires-Dist: python-dotenv>=1.0.0
+Requires-Dist: pydantic>=2.0.0
+Requires-Dist: PyGithub>=2.0.0
+Requires-Dist: PyYAML>=6.0
 Dynamic: author
+Dynamic: author-email
+Dynamic: classifier
+Dynamic: description-content-type
+Dynamic: home-page
+Dynamic: keywords
+Dynamic: license-file
 Dynamic: requires-dist
 Dynamic: requires-python
 Dynamic: summary
