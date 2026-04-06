@@ -276,6 +276,47 @@ jm template use --action generate --name custom_gen  # Use custom template
 
 For comprehensive details, see [docs/PHASE4_FEATURES.md](docs/PHASE4_FEATURES.md).
 
+## Phase 5: REST API Server
+
+A production-ready FastAPI-based REST API server providing programmatic access to all jmAgent features.
+
+### Quick Start
+
+```bash
+# Start the API server
+uvicorn src.api.main:app --reload
+
+# Access API documentation
+open http://localhost:8000/api/docs
+```
+
+### Features
+
+- **40+ REST Endpoints** for all jmAgent operations
+- **OpenAPI Documentation** at `/api/docs` and `/api/redoc`
+- **JWT & API Key Authentication** for secure access
+- **Rate Limiting** (100 requests/minute per IP)
+- **Comprehensive Audit Logging** for compliance
+- **Metrics & Analytics** for monitoring usage
+
+### Documentation
+
+- **[API Documentation](docs/API_DOCUMENTATION.md)** - Complete endpoint reference
+- **[API Examples](docs/API_EXAMPLES.md)** - Curl and Python examples
+- **[Deployment Guide](docs/DEPLOYMENT_REST_API.md)** - Installation and configuration
+- **[Production Checklist](docs/PRODUCTION_CHECKLIST.md)** - Pre-deployment verification
+
+### Example: Generate Code via API
+
+```bash
+curl -X POST http://localhost:8000/api/v1/actions/generate \
+  -H "Authorization: Bearer YOUR_JWT_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"prompt": "Hello world in Python"}'
+```
+
+For more examples, see [API Examples](docs/API_EXAMPLES.md).
+
 ## Global Options
 
 - `--model {haiku,sonnet,opus}` - LLM model (default: haiku)
