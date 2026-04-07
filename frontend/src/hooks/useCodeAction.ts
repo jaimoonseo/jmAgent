@@ -85,8 +85,11 @@ export const useCodeAction = () => {
           throw new Error('Invalid action')
       }
 
-      setState({ data: response.data, loading: false, error: null })
-      return response.data
+      // Backend wraps response in APIResponse { success, data, error, ... }
+      // Extract the actual data payload
+      const actualData = (response.data as any).data || response.data
+      setState({ data: actualData, loading: false, error: null })
+      return actualData
     } catch (error) {
       const axiosError = error as AxiosError
       setState({ data: null, loading: false, error: axiosError })
