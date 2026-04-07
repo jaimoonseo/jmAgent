@@ -3,11 +3,15 @@ import type { User } from '@/types/auth'
 
 export const authApi = {
   login: async (username: string, password: string): Promise<{ access_token: string; user: User }> => {
-    const response = await apiClient.post<{ access_token: string; user: User }>('/auth/login', {
+    const response = await apiClient.post<any>('/auth/login', {
       username,
       password,
     })
-    return response.data
+    // Backend wraps response in APIResponse { success, data, error, ... }
+    return {
+      access_token: response.data.data.access_token,
+      user: response.data.data.user,
+    }
   },
 
   validateToken: async (token: string): Promise<User> => {
