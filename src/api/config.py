@@ -24,8 +24,9 @@ class APISettings(BaseSettings):
     # CORS settings
     cors_origins: List[str] = [
         "http://localhost:3000",
-        "http://localhost:8080",
         "http://localhost:5173",
+        "http://localhost:6110",  # Frontend dev server
+        "http://localhost:8080",
     ]
     cors_credentials: bool = True
     cors_methods: List[str] = ["*"]

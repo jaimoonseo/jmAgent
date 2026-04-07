@@ -16,6 +16,7 @@ httpx>=0.24.0                  # HTTP client for testing
 # Integrations
 PyGithub>=2.0.0                # GitHub API client for integrations
 PyJWT>=2.8.0                   # JWT token creation and verification
+Jinja2>=3.1.0                  # Template engine for custom prompts
 
 # Optional: Testing & Development
 pytest>=7.0.0                  # Testing framework
