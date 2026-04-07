@@ -32,7 +32,12 @@ export const storage = {
 
   getUser: (): User | null => {
     const user = sessionStorage.getItem(AUTH_STORAGE_KEYS.USER)
-    return user ? JSON.parse(user) : null
+    try {
+      return user ? JSON.parse(user) : null
+    } catch (error) {
+      console.warn('Failed to parse stored user data:', error)
+      return null
+    }
   },
 
   removeUser: () => {
