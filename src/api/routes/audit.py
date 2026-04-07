@@ -65,10 +65,13 @@ def _filter_logs(
     if start_date:
         try:
             start_dt = datetime.fromisoformat(start_date)
+            # Make timezone-aware if it's naive
+            if start_dt.tzinfo is None:
+                start_dt = start_dt.replace(tzinfo=timezone.utc)
             filtered = [
                 log
                 for log in filtered
-                if datetime.fromisoformat(log.timestamp) >= start_dt
+                if _parse_timestamp(log.timestamp) >= start_dt
             ]
         except ValueError:
             pass
@@ -76,15 +79,26 @@ def _filter_logs(
     if end_date:
         try:
             end_dt = datetime.fromisoformat(end_date)
+            # Make timezone-aware if it's naive
+            if end_dt.tzinfo is None:
+                end_dt = end_dt.replace(tzinfo=timezone.utc)
             filtered = [
                 log
                 for log in filtered
-                if datetime.fromisoformat(log.timestamp) <= end_dt
+                if _parse_timestamp(log.timestamp) <= end_dt
             ]
         except ValueError:
             pass
 
     return filtered
+
+
+def _parse_timestamp(timestamp_str: str) -> datetime:
+    """Parse timestamp string to timezone-aware datetime."""
+    dt = datetime.fromisoformat(timestamp_str)
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt
 
 
 def _audit_record_to_entry(record, idx: int) -> AuditLogEntry:

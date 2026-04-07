@@ -337,8 +337,8 @@ class TestAuditExportEndpoint:
             headers=get_auth_headers(auth_token),
         )
 
-        # Should either reject or default to CSV
-        assert response.status_code in (200, 400)
+        # Should reject invalid format (validation error)
+        assert response.status_code in (400, 422)
 
 
 class TestAuditSummaryEndpoint:

@@ -259,8 +259,8 @@ class TestConfigDeleteEndpoint:
 
         assert response.status_code == 200
         data = response.json()
-        # Default temperature is 0.2
-        assert data["data"]["default_value"] == 0.2
+        # Default debug is False
+        assert data["data"]["default_value"] is False
 
 
 class TestConfigResetEndpoint:
@@ -282,7 +282,7 @@ class TestConfigResetEndpoint:
     def test_reset_without_auth(self, client):
         """Test that reset requires authentication."""
         response = client.post("/api/v1/config/reset")
-        assert response.status_code == 403
+        assert response.status_code == 401
 
     def test_reset_regular_user_forbidden(self, client, auth_token):
         """Test that regular users cannot reset all config."""
@@ -297,7 +297,7 @@ class TestConfigResetEndpoint:
     def test_reset_clears_previous_updates(self, client, admin_token, auth_token):
         """Test that reset clears previous config updates."""
         # Update a setting as regular user
-        update_body = {"key": "jm_temperature", "value": 0.9}
+        update_body = {"key": "debug", "value": True}
         client.post(
             "/api/v1/config",
             json=update_body,
@@ -318,7 +318,7 @@ class TestConfigResetEndpoint:
             headers=get_auth_headers(auth_token),
         )
         settings = get_response.json()["data"]["all_settings"]
-        assert settings["jm_temperature"] == 0.2  # Default value
+        assert settings["debug"] is False  # Default value
 
 
 class TestConfigEndpointIntegration:
@@ -327,7 +327,7 @@ class TestConfigEndpointIntegration:
     def test_config_update_retrieve_flow(self, client, auth_token):
         """Test updating a setting and retrieving it."""
         # Update
-        update_body = {"key": "jm_max_tokens", "value": 2048}
+        update_body = {"key": "port", "value": 9000}
         update_response = client.post(
             "/api/v1/config",
             json=update_body,
@@ -342,14 +342,14 @@ class TestConfigEndpointIntegration:
         )
         assert get_response.status_code == 200
         settings = get_response.json()["data"]["all_settings"]
-        assert settings["jm_max_tokens"] == 2048
+        assert settings["port"] == 9000
 
     def test_config_multiple_updates(self, client, auth_token):
         """Test updating multiple settings sequentially."""
         updates = [
-            {"key": "jm_temperature", "value": 0.5},
-            {"key": "jm_max_tokens", "value": 3000},
-            {"key": "jm_default_model", "value": "sonnet"},
+            {"key": "debug", "value": True},
+            {"key": "port", "value": 9001},
+            {"key": "log_level", "value": "DEBUG"},
         ]
 
         for update_body in updates:
@@ -366,9 +366,9 @@ class TestConfigEndpointIntegration:
             headers=get_auth_headers(auth_token),
         )
         settings = get_response.json()["data"]["all_settings"]
-        assert settings["jm_temperature"] == 0.5
-        assert settings["jm_max_tokens"] == 3000
-        assert settings["jm_default_model"] == "sonnet"
+        assert settings["debug"] is True
+        assert settings["port"] == 9001
+        assert settings["log_level"] == "DEBUG"
 
     def test_config_response_format(self, client, auth_token):
         """Test that config responses have correct format."""

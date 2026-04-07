@@ -3,13 +3,15 @@ import { useAuth } from '@/hooks/useAuth'
 import { useNavigate } from 'react-router-dom'
 import { APP_TITLE } from '@/utils/constants'
 
-type AuthMethod = 'token' | 'apiKey'
+type AuthMethod = 'credentials' | 'token' | 'apiKey'
 
 export const LoginPage = () => {
-  const { loginWithToken, loginWithApiKey, isAuthenticated } = useAuth()
+  const { loginWithToken, loginWithApiKey, loginWithCredentials, isAuthenticated } = useAuth()
   const navigate = useNavigate()
-  const [method, setMethod] = useState<AuthMethod>('token')
+  const [method, setMethod] = useState<AuthMethod>('credentials')
   const [loading, setLoading] = useState(false)
+  const [username, setUsername] = useState('')
+  const [password, setPassword] = useState('')
   const [value, setValue] = useState('')
   const [error, setError] = useState('')
 
@@ -27,7 +29,9 @@ export const LoginPage = () => {
     setLoading(true)
 
     try {
-      if (method === 'token') {
+      if (method === 'credentials') {
+        await loginWithCredentials(username, password)
+      } else if (method === 'token') {
         await loginWithToken(value)
       } else {
         await loginWithApiKey(value)
@@ -58,7 +62,25 @@ export const LoginPage = () => {
           <div className="flex gap-2 mb-8 border-b border-slate-200">
             <button
               onClick={() => {
+                setMethod('credentials')
+                setUsername('')
+                setPassword('')
+                setValue('')
+                setError('')
+              }}
+              className={`flex-1 py-2 font-medium text-sm transition-colors ${
+                method === 'credentials'
+                  ? 'border-b-2 border-primary-600 text-primary-600'
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              Username
+            </button>
+            <button
+              onClick={() => {
                 setMethod('token')
+                setUsername('')
+                setPassword('')
                 setValue('')
                 setError('')
               }}
@@ -73,6 +95,8 @@ export const LoginPage = () => {
             <button
               onClick={() => {
                 setMethod('apiKey')
+                setUsername('')
+                setPassword('')
                 setValue('')
                 setError('')
               }}
@@ -88,23 +112,59 @@ export const LoginPage = () => {
 
           {/* Form */}
           <form onSubmit={handleSubmit} className="space-y-6">
-            {/* Input */}
-            <div>
-              <label className="block text-sm font-medium text-slate-700 mb-2">
-                {method === 'token' ? 'JWT Bearer Token' : 'API Key'}
-              </label>
-              <textarea
-                value={value}
-                onChange={(e) => {
-                  setValue(e.target.value)
-                  setError('')
-                }}
-                placeholder={method === 'token' ? 'eyJhbGc...' : 'sk-...'}
-                className="w-full px-4 py-3 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent text-sm font-mono"
-                rows={4}
-                disabled={loading}
-              />
-            </div>
+            {/* Username/Password Input */}
+            {method === 'credentials' && (
+              <>
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-2">Username</label>
+                  <input
+                    type="text"
+                    value={username}
+                    onChange={(e) => {
+                      setUsername(e.target.value)
+                      setError('')
+                    }}
+                    placeholder="admin"
+                    className="w-full px-4 py-3 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent text-sm"
+                    disabled={loading}
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-2">Password</label>
+                  <input
+                    type="password"
+                    value={password}
+                    onChange={(e) => {
+                      setPassword(e.target.value)
+                      setError('')
+                    }}
+                    placeholder="••••••••"
+                    className="w-full px-4 py-3 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent text-sm"
+                    disabled={loading}
+                  />
+                </div>
+              </>
+            )}
+
+            {/* Token/API Key Input */}
+            {method !== 'credentials' && (
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-2">
+                  {method === 'token' ? 'JWT Bearer Token' : 'API Key'}
+                </label>
+                <textarea
+                  value={value}
+                  onChange={(e) => {
+                    setValue(e.target.value)
+                    setError('')
+                  }}
+                  placeholder={method === 'token' ? 'eyJhbGc...' : 'sk-...'}
+                  className="w-full px-4 py-3 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent text-sm font-mono"
+                  rows={4}
+                  disabled={loading}
+                />
+              </div>
+            )}
 
             {/* Error Message */}
             {error && <div className="p-4 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm">{error}</div>}
@@ -112,7 +172,7 @@ export const LoginPage = () => {
             {/* Submit Button */}
             <button
               type="submit"
-              disabled={loading || !value.trim()}
+              disabled={loading || (method === 'credentials' ? !username.trim() || !password.trim() : !value.trim())}
               className="w-full bg-primary-600 hover:bg-primary-700 disabled:bg-slate-300 text-white font-medium py-2.5 rounded-lg transition-colors"
             >
               {loading ? 'Signing in...' : 'Sign In'}
@@ -121,7 +181,9 @@ export const LoginPage = () => {
 
           {/* Footer */}
           <p className="text-center text-slate-600 text-xs mt-6">
-            For development, use a valid token from the jmAgent backend API.
+            {method === 'credentials' && 'For testing: username = "admin", password = "admin"'}
+            {method === 'token' && 'Use a valid JWT token from the jmAgent backend API.'}
+            {method === 'apiKey' && 'Use a valid API key from the jmAgent backend API.'}
           </p>
         </div>
       </div>

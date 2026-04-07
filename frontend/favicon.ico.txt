@@ -1,0 +1,3 @@
+# Favicon placeholder - in production, replace with an actual .ico file
+# You can generate one using: https://favicon-generator.org/
+# For now, using simple text placeholder

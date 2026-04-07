@@ -41,6 +41,22 @@ export const useAuth = () => {
     [authStore, navigate]
   )
 
+  const loginWithCredentials = useCallback(
+    async (username: string, password: string) => {
+      try {
+        const { access_token, user } = await authApi.login(username, password)
+        authStore.login(access_token, user)
+        toast.success('Login successful!')
+        navigate('/dashboard')
+      } catch (error) {
+        const message = error instanceof Error ? error.message : 'Invalid username or password'
+        toast.error(message)
+        throw error
+      }
+    },
+    [authStore, navigate]
+  )
+
   const logout = useCallback(() => {
     authStore.logout()
     toast.success('Logged out successfully')
@@ -58,6 +74,7 @@ export const useAuth = () => {
     ...authStore,
     loginWithToken,
     loginWithApiKey,
+    loginWithCredentials,
     logout,
     updateUser,
   }
