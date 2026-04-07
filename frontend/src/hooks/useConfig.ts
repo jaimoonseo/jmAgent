@@ -2,7 +2,7 @@ import { useState, useCallback, useEffect } from 'react'
 import toast from 'react-hot-toast'
 import { useAuthStore } from '@/store/authStore'
 import { getConfig, updateConfigSetting, resetAllSettings } from '@/utils/api'
-import type { ConfigSettings } from '@/types/config'
+import type { ConfigSettings, SettingValue } from '@/types/config'
 
 interface UseConfigState {
   config: ConfigSettings | null
@@ -52,7 +52,7 @@ export const useConfig = () => {
   }, [])
 
   const updateSetting = useCallback(
-    async (key: string, value: any) => {
+    async (key: string, value: SettingValue) => {
       setState((prev) => ({
         ...prev,
         updatingKeys: new Set([...prev.updatingKeys, key]),

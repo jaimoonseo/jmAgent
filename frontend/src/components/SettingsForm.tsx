@@ -1,10 +1,10 @@
 import { useState } from 'react'
 import { LoadingSpinner } from './LoadingSpinner'
-import type { ConfigSettings } from '@/types/config'
+import type { ConfigSettings, SettingValue } from '@/types/config'
 
 interface SettingsFormProps {
   settings: ConfigSettings | null
-  onUpdateSetting: (key: string, value: any) => Promise<any>
+  onUpdateSetting: (key: string, value: SettingValue) => Promise<any>
   onReset: () => Promise<any>
   isLoading: boolean
   isAdmin: boolean
@@ -22,7 +22,7 @@ const getCategoryFromKey = (key: string): string => {
 }
 
 // Infer field type from value
-const inferFieldType = (value: any): 'string' | 'number' | 'boolean' => {
+const inferFieldType = (value: SettingValue): 'string' | 'number' | 'boolean' => {
   if (typeof value === 'boolean') return 'boolean'
   if (typeof value === 'number') return 'number'
   return 'string'
@@ -46,11 +46,11 @@ export const SettingsForm = ({
   isAdmin,
   updatingKeys,
 }: SettingsFormProps) => {
-  const [localValues, setLocalValues] = useState<Record<string, any>>(settings || {})
+  const [localValues, setLocalValues] = useState<Record<string, SettingValue>>(settings || {})
   const [resetLoading, setResetLoading] = useState(false)
 
   // Update local value on input change
-  const handleChange = (key: string, value: any) => {
+  const handleChange = (key: string, value: SettingValue) => {
     setLocalValues((prev) => ({
       ...prev,
       [key]: value,
@@ -62,7 +62,7 @@ export const SettingsForm = ({
     const newValue = localValues[key]
     const oldValue = settings?.[key]
 
-    if (newValue !== oldValue) {
+    if (newValue !== oldValue && oldValue !== undefined) {
       try {
         await onUpdateSetting(key, newValue)
       } catch {
@@ -155,7 +155,7 @@ export const SettingsForm = ({
                     ) : fieldType === 'number' ? (
                       <input
                         type="number"
-                        value={currentValue}
+                        value={currentValue as number}
                         onChange={(e) =>
                           handleChange(key, parseFloat(e.target.value))
                         }
@@ -167,7 +167,7 @@ export const SettingsForm = ({
                     ) : (
                       <input
                         type="text"
-                        value={currentValue}
+                        value={currentValue as string}
                         onChange={(e) => handleChange(key, e.target.value)}
                         onBlur={() => handleBlur(key)}
                         disabled={isUpdating}

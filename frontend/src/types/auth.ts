@@ -1,6 +1,8 @@
+export type UserRole = 'admin' | 'user' | 'guest'
+
 export interface User {
   id: string
-  role: string
+  role: UserRole
   email?: string
   name?: string
 }

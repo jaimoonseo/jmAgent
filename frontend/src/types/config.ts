@@ -1,3 +1,5 @@
+export type SettingValue = string | number | boolean
+
 export type SettingType = 'string' | 'number' | 'boolean' | 'enum'
 
 export interface SettingMetadata {
@@ -10,14 +12,14 @@ export interface SettingMetadata {
   step?: number // For number type
 }
 
-export type ConfigSettings = Record<string, any>
+export type ConfigSettings = Record<string, SettingValue>
 
 export interface ConfigResponse {
-  [key: string]: any
+  [key: string]: SettingValue
 }
 
 export interface UpdateConfigRequest {
-  value: any
+  value: SettingValue
 }
 
 export interface ResetConfigResponse {
@@ -34,8 +36,8 @@ export interface ConfigPageState {
 
 export interface SettingFieldProps {
   name: string
-  value: any
-  onChange: (key: string, value: any) => void
+  value: SettingValue
+  onChange: (key: string, value: SettingValue) => void
   onBlur?: (key: string) => void
   type?: SettingType
   metadata?: SettingMetadata
