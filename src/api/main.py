@@ -2,7 +2,13 @@
 
 # Load environment variables from .env file at startup
 from dotenv import load_dotenv
-load_dotenv()
+import os
+# Use absolute path to ensure .env is loaded regardless of working directory
+# __file__ = /Users/jaimoonseo/Documents/jmAgent/src/api/main.py
+# project_root = /Users/jaimoonseo/Documents/jmAgent
+project_root = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
+env_path = os.path.join(project_root, ".env")
+load_dotenv(env_path)
 
 from fastapi import FastAPI, Request, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
