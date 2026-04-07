@@ -165,7 +165,7 @@ async def get_current_user_flexible(
 
 
 @router.post(
-    "/actions/generate",
+    "/agent/generate",
     response_model=APIResponse,
     summary="Generate Code",
     tags=["Actions"],
@@ -248,7 +248,7 @@ async def generate(
 
 
 @router.post(
-    "/actions/refactor",
+    "/agent/refactor",
     response_model=APIResponse,
     summary="Refactor Code",
     tags=["Actions"],
@@ -337,7 +337,7 @@ async def refactor(
 
 
 @router.post(
-    "/actions/test",
+    "/agent/test",
     response_model=APIResponse,
     summary="Generate Tests",
     tags=["Actions"],
@@ -427,7 +427,7 @@ async def test(
 
 
 @router.post(
-    "/actions/explain",
+    "/agent/explain",
     response_model=APIResponse,
     summary="Explain Code",
     tags=["Actions"],
@@ -524,7 +524,7 @@ async def explain(
 
 
 @router.post(
-    "/actions/fix",
+    "/agent/fix",
     response_model=APIResponse,
     summary="Fix Bug",
     tags=["Actions"],
@@ -613,7 +613,7 @@ async def fix(
 
 
 @router.post(
-    "/actions/chat",
+    "/agent/chat",
     response_model=APIResponse,
     summary="Chat",
     tags=["Actions"],
