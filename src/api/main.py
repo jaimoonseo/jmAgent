@@ -11,7 +11,7 @@ from src.logging.logger import StructuredLogger
 from src.api.config import settings
 from src.api.exceptions import APIException
 from src.api.middleware import RequestLoggingMiddleware, ErrorHandlingMiddleware, SecurityHeadersMiddleware, RateLimitMiddleware
-from src.api.routes import health, actions, config, metrics, audit, plugins, templates, status
+from src.api.routes import health, auth, actions, config, metrics, audit, plugins, templates, status
 
 # Configure logger
 logger = StructuredLogger(__name__)
@@ -122,6 +122,7 @@ def create_app() -> FastAPI:
 
     # Register routes
     app.include_router(health.router, prefix="/api/v1", tags=["health"])
+    app.include_router(auth.router, prefix="/api/v1", tags=["auth"])
     app.include_router(actions.router, prefix="/api/v1", tags=["actions"])
     app.include_router(config.router, prefix="/api/v1", tags=["config"])
     app.include_router(metrics.router, prefix="/api/v1", tags=["metrics"])
