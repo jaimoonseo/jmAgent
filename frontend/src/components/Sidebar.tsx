@@ -14,6 +14,7 @@ const sidebarLinks: SidebarLink[] = [
   { label: 'Explain Code', href: '/explain', icon: '📖' },
   { label: 'Bug Fix', href: '/fix', icon: '🐛' },
   { label: 'Chat', href: '/chat', icon: '💬' },
+  { label: 'File Browser', href: '/files', icon: '📁' },
   { label: 'Configuration', href: '/config', icon: '⚙️' },
 ]
 

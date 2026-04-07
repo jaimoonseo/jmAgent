@@ -12,6 +12,7 @@ import { ExplainPage } from '@/pages/ExplainPage'
 import { FixPage } from '@/pages/FixPage'
 import { ChatPage } from '@/pages/ChatPage'
 import { ConfigPage } from '@/pages/ConfigPage'
+import { FileBrowserPage } from '@/pages/FileBrowserPage'
 import { NotFoundPage } from '@/pages/NotFoundPage'
 import { ROUTES } from '@/utils/constants'
 
@@ -102,6 +103,14 @@ export const App = () => {
               element={
                 <ProtectedRoute>
                   <ConfigPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path={ROUTES.FILES}
+              element={
+                <ProtectedRoute>
+                  <FileBrowserPage />
                 </ProtectedRoute>
               }
             />

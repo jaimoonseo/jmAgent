@@ -92,3 +92,31 @@ export const healthApi = {
     return response.data
   },
 }
+
+export const filesApi = {
+  setProjectRoot: async (path: string) => {
+    const response = await apiClient.post<any>('/files/set-project-root', { path })
+    return response.data.data
+  },
+
+  listFiles: async (path: string = '') => {
+    const response = await apiClient.get<any>('/files/list', {
+      params: { path },
+    })
+    return response.data.data
+  },
+
+  readFile: async (path: string) => {
+    const response = await apiClient.post<any>('/files/read', { path })
+    return response.data.data
+  },
+
+  writeFile: async (path: string, content: string, createDirs: boolean = true) => {
+    const response = await apiClient.post<any>('/files/write', {
+      path,
+      content,
+      create_dirs: createDirs,
+    })
+    return response.data.data
+  },
+}

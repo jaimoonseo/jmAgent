@@ -21,6 +21,7 @@ export const ROUTES = {
   LOGIN: '/login',
   DASHBOARD: '/dashboard',
   CONFIG: '/config',
+  FILES: '/files',
   NOT_FOUND: '*',
 }
 
