@@ -8,5 +8,6 @@ from src.api.routes import metrics
 from src.api.routes import audit
 from src.api.routes import plugins
 from src.api.routes import templates
+from src.api.routes import files
 
-__all__ = ["health", "auth", "actions", "config", "metrics", "audit", "plugins", "templates"]
+__all__ = ["health", "auth", "actions", "config", "metrics", "audit", "plugins", "templates", "files"]
