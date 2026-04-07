@@ -13,6 +13,8 @@ const sidebarLinks: SidebarLink[] = [
   { label: 'Test Generation', href: '/test', icon: '🧪' },
   { label: 'Explain Code', href: '/explain', icon: '📖' },
   { label: 'Bug Fix', href: '/fix', icon: '🐛' },
+  { label: 'Chat', href: '/chat', icon: '💬' },
+  { label: 'Configuration', href: '/config', icon: '⚙️' },
 ]
 
 export const Sidebar = () => {
