@@ -2,9 +2,11 @@
 
 import time
 import uuid
-from typing import Dict, Optional
+import json
+from typing import Dict, Optional, AsyncGenerator
 from pathlib import Path
 from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi.responses import StreamingResponse
 
 from src.logging.logger import StructuredLogger
 from src.api.models import APIResponse
@@ -707,3 +709,130 @@ async def chat(
             },
         )
         raise ServerError(f"Chat failed: {str(e)}")
+
+
+@router.post(
+    "/agent/chat-stream",
+    summary="Chat with Streaming",
+    tags=["Actions"],
+)
+async def chat_stream(
+    request: ChatRequest,
+    current_user: dict = Depends(get_current_user_flexible),
+    agent: JmAgent = Depends(get_agent),
+) -> StreamingResponse:
+    """
+    Interactive chat with streaming response (Server-Sent Events).
+
+    Returns a stream of SSE events with progress and response tokens.
+
+    Event types:
+        - progress: Status update
+        - token: Response token (streamed)
+        - conversation_id: Final conversation ID
+        - complete: Final response
+    """
+    async def generate() -> AsyncGenerator[str, None]:
+        start_time = time.time()
+
+        try:
+            # Generate or use existing conversation ID
+            conversation_id = request.conversation_id or str(uuid.uuid4())
+
+            yield f'data: {json.dumps({"type": "progress", "message": "Initializing conversation..."})}\n\n'
+
+            # Initialize conversation if new
+            if conversation_id not in conversation_store:
+                conversation_store[conversation_id] = []
+                yield f'data: {json.dumps({"type": "progress", "message": "New conversation created"})}\n\n'
+            else:
+                message_count = len(conversation_store[conversation_id])
+                yield f'data: {json.dumps({"type": "progress", "message": f"Loaded {message_count} previous messages"})}\n\n'
+
+            # Add user message to history
+            conversation_store[conversation_id].append({
+                "role": "user",
+                "content": request.message,
+            })
+            yield f'data: {json.dumps({"type": "progress", "message": "User message added to history"})}\n\n'
+
+            # Update agent conversation history
+            agent.conversation_history = conversation_store[conversation_id].copy()
+            yield f'data: {json.dumps({"type": "progress", "message": "Calling Claude model..."})}\n\n'
+
+            # Call agent
+            response = await agent._call_bedrock("chat", request.message, use_history=True)
+
+            output_tokens = response.usage.get("output_tokens", 0)
+            yield f'data: {json.dumps({"type": "progress", "message": f"Received response ({output_tokens} tokens)"})} \n\n'
+
+            # Add assistant response to history
+            conversation_store[conversation_id].append({
+                "role": "assistant",
+                "content": response.content,
+            })
+
+            # Stream the response content
+            yield f'data: {json.dumps({"type": "token", "content": response.content})}\n\n'
+
+            # Send conversation ID
+            yield f'data: {json.dumps({"type": "conversation_id", "conversation_id": conversation_id})}\n\n'
+
+            execution_time = time.time() - start_time
+            input_tokens = response.usage.get("input_tokens", 0)
+            output_tokens = response.usage.get("output_tokens", 0)
+            total_tokens = input_tokens + output_tokens
+
+            # Send completion progress
+            yield f'data: {json.dumps({"type": "progress", "message": f"Processing complete in {execution_time:.2f}s"})}\n\n'
+
+            # Send complete response with metadata
+            complete_data = {
+                "type": "complete",
+                "status": "success",
+                "response": response.content,
+                "execution_time": execution_time,
+                "tokens_used": {
+                    "input": input_tokens,
+                    "output": output_tokens,
+                    "total": total_tokens
+                },
+                "conversation_id": conversation_id,
+                "timestamp": time.time()
+            }
+            yield f'data: {json.dumps(complete_data)}\n\n'
+
+            logger.info(
+                "Chat stream completed successfully",
+                extra={
+                    "user_id": current_user.get("user_id"),
+                    "conversation_id": conversation_id,
+                    "execution_time": execution_time,
+                    "tokens": {
+                        "input": input_tokens,
+                        "output": output_tokens,
+                        "total": total_tokens
+                    },
+                },
+            )
+
+        except Exception as e:
+            execution_time = time.time() - start_time
+            logger.error(
+                "Chat stream failed",
+                extra={
+                    "user_id": current_user.get("user_id"),
+                    "error": str(e),
+                    "execution_time": execution_time,
+                },
+            )
+            yield f'data: {json.dumps({"type": "error", "message": str(e)})}\n\n'
+
+    return StreamingResponse(
+        generate(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+        },
+    )

@@ -7,6 +7,7 @@ interface SidebarLink {
 }
 
 const sidebarLinks: SidebarLink[] = [
+  { label: 'Workspace', href: '/workspace', icon: '🏗️' },
   { label: 'Dashboard', href: '/dashboard', icon: '📊' },
   { label: 'Generate Code', href: '/generate', icon: '✨' },
   { label: 'Refactor', href: '/refactor', icon: '🔧' },

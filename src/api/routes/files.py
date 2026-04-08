@@ -178,24 +178,26 @@ async def set_project_root(
     global project_root
 
     try:
-        path = Path(request.path)
+        # Trim whitespace from path
+        path_str = request.path.strip()
+        path = Path(path_str)
         if not path.exists():
-            raise HTTPException(status_code=400, detail=f"Path does not exist: {request.path}")
+            raise HTTPException(status_code=400, detail=f"Path does not exist: {path_str}")
         if not path.is_dir():
-            raise HTTPException(status_code=400, detail=f"Path is not a directory: {request.path}")
+            raise HTTPException(status_code=400, detail=f"Path is not a directory: {path_str}")
 
         project_root = path
         logger.info(
             "Project root set",
             extra={
                 "user_id": current_user.get("user_id"),
-                "project_root": str(project_root),
+                "project_root": str(path),
             },
         )
 
         return APIResponse(
             success=True,
-            data={"project_root": str(project_root)},
+            data={"project_root": str(path)},
         )
     except HTTPException:
         raise
@@ -421,3 +423,66 @@ async def write_file(
             },
         )
         raise HTTPException(status_code=500, detail=f"Failed to write file: {str(e)}")
+
+
+@router.get(
+    "/files/browse",
+    response_model=APIResponse,
+    summary="Browse Directory Tree",
+    tags=["Files"],
+)
+async def browse_directory(
+    path: str = "~",
+    current_user: dict = Depends(get_current_user_flexible),
+) -> APIResponse:
+    """
+    Browse directory tree for project selection.
+    
+    Args:
+        path: Directory path to list (~ for home)
+    
+    Returns:
+        APIResponse with directory structure
+    """
+    try:
+        # Expand home directory
+        if path == "~" or path.startswith("~/"):
+            expanded_path = os.path.expanduser(path)
+        else:
+            expanded_path = path
+        
+        dir_path = Path(expanded_path)
+        
+        if not dir_path.exists():
+            raise HTTPException(status_code=404, detail=f"Path not found: {path}")
+        
+        if not dir_path.is_dir():
+            raise HTTPException(status_code=400, detail=f"Path is not a directory: {path}")
+        
+        directories: List[FileInfo] = []
+        
+        # List only directories
+        for item in sorted(dir_path.iterdir()):
+            try:
+                if item.is_dir() and not item.name.startswith("."):
+                    directories.append(FileInfo(
+                        name=item.name,
+                        path=str(item),
+                        type="directory",
+                    ))
+            except (PermissionError, OSError):
+                pass
+        
+        return APIResponse(
+            success=True,
+            data={
+                "path": str(dir_path),
+                "files": [d.dict() for d in directories],
+            },
+        )
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to browse directory: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to browse directory: {str(e)}")

@@ -20,6 +20,7 @@ export const HTTP_STATUS = {
 export const ROUTES = {
   LOGIN: '/login',
   DASHBOARD: '/dashboard',
+  WORKSPACE: '/workspace',
   CONFIG: '/config',
   FILES: '/files',
   NOT_FOUND: '*',
