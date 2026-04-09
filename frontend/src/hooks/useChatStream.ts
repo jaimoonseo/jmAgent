@@ -95,12 +95,22 @@ export const useChatStream = () => {
                 ...prev,
                 progress: [...prev.progress, data.message],
               }))
-            } else if (data.type === 'content') {
-              // Content delta (streaming response)
-              fullContent += data.delta || ''
-            } else if (data.type === 'done') {
+            } else if (data.type === 'token') {
+              // Full response content (from backend)
+              fullContent = data.content || ''
+            } else if (data.type === 'complete') {
               // Stream complete with stats
-              streamStats = data.stats || undefined
+              streamStats =
+                data.tokens_used && data.execution_time
+                  ? {
+                      executionTime: data.execution_time,
+                      tokensUsed: {
+                        input: data.tokens_used.input || 0,
+                        output: data.tokens_used.output || 0,
+                        total: data.tokens_used.total || 0,
+                      },
+                    }
+                  : undefined
               setState((prev) => ({
                 ...prev,
                 isStreaming: false,
