@@ -217,7 +217,25 @@ export const ProjectWorkspacePage = () => {
     setStreamStats(null)
 
     try {
-      const ESTIMATED_TOKENS_PER_CHAR = 0.25
+      // Token estimation with Korean character support
+      // Korean chars are much heavier than English: 1 Korean char = 1-2 tokens
+      // English chars are lighter: 1 English char = 0.25 tokens
+      const estimateTokens = (text: string): number => {
+        let tokens = 0
+        for (const char of text) {
+          const code = char.charCodeAt(0)
+          // Korean: AC00-D7A3 (가-힣)
+          if (code >= 0xac00 && code <= 0xd7a3) {
+            tokens += 1.5  // Korean: 1.5 tokens per char
+          } else if (code < 128) {
+            tokens += 0.25  // ASCII: 0.25 tokens per char
+          } else {
+            tokens += 0.5   // Other Unicode: 0.5 tokens per char
+          }
+        }
+        return Math.round(tokens)
+      }
+
       // Increased budget since backend manages history via conversation_id
       // Frontend only handles file context
       const MAX_FILE_TOKENS = 3000       // Max tokens per file (was 800)
@@ -231,7 +249,7 @@ export const ProjectWorkspacePage = () => {
         const contextLines: string[] = []
 
         for (const file of contextFiles) {
-          const fileTokens = Math.round(file.content.length * ESTIMATED_TOKENS_PER_CHAR)
+          const fileTokens = estimateTokens(file.content)
 
           // Skip if total would exceed budget
           if (totalContextTokens + fileTokens > MAX_TOTAL_CONTEXT) {
@@ -260,7 +278,7 @@ export const ProjectWorkspacePage = () => {
       // 2. Build message (NO history inlining — backend manages via conversation_id)
       const message = contextPrefix + input
 
-      const totalTokens = Math.round(message.length * ESTIMATED_TOKENS_PER_CHAR)
+      const totalTokens = estimateTokens(message)
       if (totalTokens > 8000) {
         // Warn only if approaching limits (8k tokens ≈ 32k chars)
         toast('⚠️ Very high token usage - consider starting new chat', { icon: '⚠️' })
