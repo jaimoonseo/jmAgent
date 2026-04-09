@@ -218,8 +218,10 @@ export const ProjectWorkspacePage = () => {
 
     try {
       const ESTIMATED_TOKENS_PER_CHAR = 0.25
-      const MAX_FILE_TOKENS = 800        // Max tokens per file
-      const MAX_TOTAL_CONTEXT = 2000     // Max total context tokens
+      // Increased budget since backend manages history via conversation_id
+      // Frontend only handles file context
+      const MAX_FILE_TOKENS = 3000       // Max tokens per file (was 800)
+      const MAX_TOTAL_CONTEXT = 10000    // Max total context tokens (was 2000)
 
       // 1. Build context files with token budget (CRITICAL for token savings)
       let contextPrefix = ''
@@ -259,8 +261,9 @@ export const ProjectWorkspacePage = () => {
       const message = contextPrefix + input
 
       const totalTokens = Math.round(message.length * ESTIMATED_TOKENS_PER_CHAR)
-      if (totalTokens > 3500) {
-        toast('⚠️ High token usage - consider starting new chat', { icon: '⚠️' })
+      if (totalTokens > 8000) {
+        // Warn only if approaching limits (8k tokens ≈ 32k chars)
+        toast('⚠️ Very high token usage - consider starting new chat', { icon: '⚠️' })
       }
 
       setStreamProgress((prev) => [...prev, '📤 Claude에 전송 중...'])
