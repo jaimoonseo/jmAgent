@@ -756,8 +756,23 @@ async def chat_stream(
             })
             yield f'data: {json.dumps({"type": "progress", "message": "User message added to history"})}\n\n'
 
-            # Update agent conversation history
-            agent.conversation_history = conversation_store[conversation_id].copy()
+            # Update agent conversation history with sliding window to prevent token bloat
+            # Keep only the last 20 messages (10 Q&A pairs) to manage token growth
+            MAX_HISTORY_MESSAGES = 20
+            conversation_history = conversation_store[conversation_id]
+            if len(conversation_history) > MAX_HISTORY_MESSAGES:
+                agent.conversation_history = conversation_history[-MAX_HISTORY_MESSAGES:].copy()
+                logger.info(
+                    "Conversation history trimmed",
+                    extra={
+                        "conversation_id": conversation_id,
+                        "original_count": len(conversation_history),
+                        "kept_count": len(agent.conversation_history),
+                    },
+                )
+            else:
+                agent.conversation_history = conversation_history.copy()
+
             yield f'data: {json.dumps({"type": "progress", "message": "Calling Claude model..."})}\n\n'
 
             # Call agent
