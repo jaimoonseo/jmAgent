@@ -4,9 +4,19 @@ import { WorkspaceLeftPanel } from '@/components/WorkspaceLeftPanel'
 import { WorkspaceCenterPanel } from '@/components/WorkspaceCenterPanel'
 import { WorkspaceRightPanel } from '@/components/WorkspaceRightPanel'
 import { useCodeAction } from '@/hooks/useCodeAction'
+import { useChatStream } from '@/hooks/useChatStream'
 import type { FileInfo } from '@/types/files'
 import type { Model, ChatMessage } from '@/types/actions'
 import toast from 'react-hot-toast'
+
+// Generate UUID for conversation ID
+const generateUUID = () => {
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+    const r = (Math.random() * 16) | 0
+    const v = c === 'x' ? r : (r & 0x3) | 0x8
+    return v.toString(16)
+  })
+}
 
 export const ProjectWorkspacePage = () => {
   // Load saved state on mount
@@ -27,6 +37,7 @@ export const ProjectWorkspacePage = () => {
   const [viewingFile, setViewingFile] = useState<{ path: string; content: string } | null>(null)
   const [isEditingMode, setIsEditingMode] = useState(false)
   const [editingFile, setEditingFile] = useState<{ path: string; content: string } | null>(null)
+  const [conversationId, setConversationId] = useState<string>(() => generateUUID())
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [chatInput, setChatInput] = useState('')
   const [model, setModel] = useState<Model>('haiku')
@@ -47,7 +58,8 @@ export const ProjectWorkspacePage = () => {
   const [isStreaming, setIsStreaming] = useState(false)
   const [isComposing, setIsComposing] = useState(false)  // Track IME composition
 
-  const { execute, loading: chatLoading } = useCodeAction()
+  const { execute } = useCodeAction()
+  const { sendChatStream } = useChatStream()
 
   // Load saved state on mount
   useEffect(() => {
@@ -195,103 +207,94 @@ export const ProjectWorkspacePage = () => {
     const input = chatInput.trim()
     if (!input) return
 
-    // Debug log
-    console.log('handleSendMessage called with input:', `"${input}"`)
-
     const userMsg: ChatMessage = { role: 'user', content: input }
 
-    // Update all states atomically
-    setMessages((prev) => {
-      console.log('Adding message. Current messages:', prev.length)
-      return [...prev, userMsg]
-    })
-    setChatInput('')  // Clear input immediately
+    // Add user message to history immediately
+    setMessages((prev) => [...prev, userMsg])
+    setChatInput('')
     setIsStreaming(true)
     setStreamProgress(['🚀 작업 시작...'])
     setStreamStats(null)
 
     try {
-      // Build context with conversation history (with token management)
-      let fullMsg = ''
-      const MAX_HISTORY_MESSAGES = 10  // Keep only last 10 messages
-      const ESTIMATED_TOKENS_PER_CHAR = 0.25  // Rough estimate
+      const ESTIMATED_TOKENS_PER_CHAR = 0.25
+      const MAX_FILE_TOKENS = 800        // Max tokens per file
+      const MAX_TOTAL_CONTEXT = 2000     // Max total context tokens
 
-      // 1. Add conversation history (sliding window)
-      // Use the PREVIOUS messages (before adding current one)
-      if (messages.length > 0) {
-        // Get last N messages to manage token growth
-        const historyMessages = messages.slice(Math.max(0, messages.length - MAX_HISTORY_MESSAGES))
-        const conversationHistory = historyMessages
-          .map((msg) => `${msg.role === 'user' ? 'User' : 'Assistant'}: ${msg.content}`)
-          .join('\n\n')
-        fullMsg += conversationHistory + '\n\n---\n\n'
+      // 1. Build context files with token budget (CRITICAL for token savings)
+      let contextPrefix = ''
+      let totalContextTokens = 0
 
-        const estimatedTokens = Math.round(conversationHistory.length * ESTIMATED_TOKENS_PER_CHAR)
-        console.log(`History: ${historyMessages.length} messages (${estimatedTokens} estimated tokens)`)
-      }
-
-      // 2. Add context files
       if (contextFiles.length > 0) {
-        const filesPrefix = contextFiles.map((f) => `[${f.path}]\n${f.content}`).join('\n\n---\n\n')
-        fullMsg += filesPrefix + '\n\n---\n\n'
+        const contextLines: string[] = []
 
-        const estimatedTokens = Math.round(filesPrefix.length * ESTIMATED_TOKENS_PER_CHAR)
-        console.log(`Context files: ${contextFiles.length} files (${estimatedTokens} estimated tokens)`)
-      }
+        for (const file of contextFiles) {
+          const fileTokens = Math.round(file.content.length * ESTIMATED_TOKENS_PER_CHAR)
 
-      // 3. Add current user message (NOT trimmed again)
-      fullMsg += `User: ${input}`
-      console.log('Final message to send. Length:', input.length, 'Last char:', input.charCodeAt(input.length - 1))
+          // Skip if total would exceed budget
+          if (totalContextTokens + fileTokens > MAX_TOTAL_CONTEXT) {
+            toast(`⚠️ ${file.path} 제외됨 (토큰 한도 초과)`, { icon: '⚠️' })
+            continue
+          }
 
-      // Estimate total tokens
-      const totalEstimatedTokens = Math.round(fullMsg.length * ESTIMATED_TOKENS_PER_CHAR)
-      console.log('Message sent:', {
-        historyMessages: Math.min(messages.length, MAX_HISTORY_MESSAGES),
-        contextFiles: contextFiles.length,
-        estimatedTotalTokens: totalEstimatedTokens,
-        messageLength: input.length
-      })
+          // Trim file if too large
+          const content =
+            fileTokens > MAX_FILE_TOKENS
+              ? file.content.slice(0, MAX_FILE_TOKENS * 4) + '\n... (truncated)'
+              : file.content
 
-      if (totalEstimatedTokens > 3500) {
-        console.warn('⚠️ Token limit approaching! Consider clearing old messages.')
-        toast('⚠️ Token usage high - consider starting a new chat', { icon: '⚠️' })
-      }
-
-      // Update progress before calling execute
-      await new Promise(resolve => setTimeout(resolve, 100))
-      setStreamProgress((prev) => [...prev, '📤 Claude 모델에 요청 중...'])
-
-      // Use regular chat endpoint (already authenticated)
-      const res = await execute({
-        action: 'chat',
-        params: { message: fullMsg, model },
-      })
-
-      // Update progress after response received
-      setStreamProgress((prev) => [...prev, '📥 응답 수신 중...'])
-      await new Promise(resolve => setTimeout(resolve, 100))
-
-      if (res?.response) {
-        setStreamProgress((prev) => [...prev, '✅ 처리 완료'])
-
-        const assistantMsg: ChatMessage = { role: 'assistant', content: res.response }
-        setMessages((prev) => [...prev, assistantMsg])
-
-        // Extract code blocks
-        const codeMatch = res.response.match(/```[\w]*\n([\s\S]*?)```/g)
-        if (codeMatch) {
-          const code = codeMatch
-            .map((block: string) => block.replace(/```[\w]*\n/, '').replace(/```$/, ''))
-            .join('\n\n')
-          setOutputCode(code)
+          contextLines.push(`[${file.path}]\n${content}`)
+          totalContextTokens += Math.min(fileTokens, MAX_FILE_TOKENS)
         }
 
-        // Set completion stats
-        await new Promise(resolve => setTimeout(resolve, 500))
-        setStreamStats({
-          executionTime: 0,
-          tokensUsed: { input: 0, output: 0, total: 0 },
-        })
+        if (contextLines.length > 0) {
+          contextPrefix = contextLines.join('\n\n---\n\n') + '\n\n---\n\n'
+          console.log(
+            `Context files: ${contextLines.length}/${contextFiles.length} files (${totalContextTokens} tokens)`
+          )
+        }
+      }
+
+      // 2. Build message (NO history inlining — backend manages via conversation_id)
+      const message = contextPrefix + input
+
+      const totalTokens = Math.round(message.length * ESTIMATED_TOKENS_PER_CHAR)
+      if (totalTokens > 3500) {
+        toast('⚠️ High token usage - consider starting new chat', { icon: '⚠️' })
+      }
+
+      setStreamProgress((prev) => [...prev, '📤 Claude에 전송 중...'])
+
+      // 3. Use SSE streaming (real-time progress, no timeout issues)
+      const result = await sendChatStream({
+        message,
+        conversation_id: conversationId,  // Backend maintains history with this ID
+        model,
+      })
+
+      if (!result) return  // Cancelled
+
+      const { content, stats } = result
+
+      setStreamProgress((prev) => [...prev, '📥 응답 처리 중...'])
+
+      // Add assistant message
+      const assistantMsg: ChatMessage = { role: 'assistant', content }
+      setMessages((prev) => [...prev, assistantMsg])
+
+      // Extract code blocks
+      const codeMatch = content.match(/```[\w]*\n([\s\S]*?)```/g)
+      if (codeMatch) {
+        const code = codeMatch
+          .map((block: string) => block.replace(/```[\w]*\n/, '').replace(/```$/, ''))
+          .join('\n\n')
+        setOutputCode(code)
+      }
+
+      // Show completion stats
+      setStreamProgress((prev) => [...prev, '✅ 완료!'])
+      if (stats) {
+        setStreamStats(stats)
       }
     } catch (error) {
       console.error('Chat error:', error)
@@ -345,6 +348,7 @@ export const ProjectWorkspacePage = () => {
     setMessages([])
     setChatInput('')
     setOutputCode('')
+    setConversationId(generateUUID())  // New chat = new conversation
   }
 
   const handleFileView = async (file: FileInfo) => {
@@ -639,7 +643,7 @@ Code generation rules
         setCenterTab={setCenterTab}
         messages={messages}
         chatInput={chatInput}
-        chatLoading={chatLoading}
+        chatLoading={isStreaming}  // Use isStreaming for UI feedback
         model={model}
         contextFiles={contextFiles}
         isStreaming={isStreaming}

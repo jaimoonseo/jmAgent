@@ -1,7 +1,7 @@
-import { useState, useCallback } from 'react'
-import { AxiosError } from 'axios'
+import { useState, useCallback, useRef } from 'react'
+import axios, { AxiosError } from 'axios'
 import toast from 'react-hot-toast'
-import { apiClient } from '@/api/client'
+import { apiClient, ACTION_TIMEOUTS } from '@/api/client'
 import type {
   GenerateRequest,
   GenerateResponse,
@@ -39,8 +39,18 @@ export const useCodeAction = () => {
     error: null,
   })
 
+  // AbortController to cancel previous request when new one starts
+  const abortRef = useRef<AbortController | null>(null)
+
   const execute = useCallback(async (request: CodeActionRequest) => {
+    // Abort previous request if still in progress
+    abortRef.current?.abort()
+    abortRef.current = new AbortController()
+
     setState({ data: null, loading: true, error: null })
+
+    // Get per-action timeout
+    const timeout = ACTION_TIMEOUTS[request.action] ?? ACTION_TIMEOUTS.default
 
     try {
       let response
@@ -48,37 +58,43 @@ export const useCodeAction = () => {
         case 'generate':
           response = await apiClient.post<GenerateResponse>(
             '/agent/generate',
-            request.params
+            request.params,
+            { timeout, signal: abortRef.current.signal }
           )
           break
         case 'refactor':
           response = await apiClient.post<RefactorResponse>(
             '/agent/refactor',
-            request.params
+            request.params,
+            { timeout, signal: abortRef.current.signal }
           )
           break
         case 'test':
           response = await apiClient.post<TestResponse>(
             '/agent/test',
-            request.params
+            request.params,
+            { timeout, signal: abortRef.current.signal }
           )
           break
         case 'explain':
           response = await apiClient.post<ExplainResponse>(
             '/agent/explain',
-            request.params
+            request.params,
+            { timeout, signal: abortRef.current.signal }
           )
           break
         case 'fix':
           response = await apiClient.post<FixResponse>(
             '/agent/fix',
-            request.params
+            request.params,
+            { timeout, signal: abortRef.current.signal }
           )
           break
         case 'chat':
           response = await apiClient.post<ChatResponse>(
             '/agent/chat',
-            request.params
+            request.params,
+            { timeout, signal: abortRef.current.signal }
           )
           break
         default:
@@ -91,6 +107,12 @@ export const useCodeAction = () => {
       setState({ data: actualData, loading: false, error: null })
       return actualData
     } catch (error) {
+      // Cancelled request — no token spent, no error toast
+      if (axios.isCancel(error)) {
+        setState({ data: null, loading: false, error: null })
+        return null
+      }
+
       const axiosError = error as AxiosError
       setState({ data: null, loading: false, error: axiosError })
 
@@ -109,9 +131,15 @@ export const useCodeAction = () => {
     setState({ data: null, loading: false, error: null })
   }, [])
 
+  const cancel = useCallback(() => {
+    abortRef.current?.abort()
+    setState({ data: null, loading: false, error: null })
+  }, [])
+
   return {
     ...state,
     execute,
     reset,
+    cancel,
   }
 }

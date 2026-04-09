@@ -3,10 +3,21 @@ import toast from 'react-hot-toast'
 import { API_BASE_URL, AUTH_HEADERS, HTTP_STATUS } from '@/utils/constants'
 import { useAuthStore } from '@/store/authStore'
 
+// Per-action timeout configuration (in milliseconds)
+export const ACTION_TIMEOUTS: Record<string, number> = {
+  chat: 120_000,      // 2 minutes
+  generate: 90_000,   // 1.5 minutes
+  refactor: 60_000,   // 1 minute
+  test: 60_000,
+  explain: 45_000,
+  fix: 60_000,
+  default: 30_000,
+}
+
 export const createApiClient = (): AxiosInstance => {
   const client = axios.create({
     baseURL: API_BASE_URL,
-    timeout: 30000,
+    timeout: 120000,  // Increased from 30s to 2m as default
     headers: {
       'Content-Type': 'application/json',
     },
