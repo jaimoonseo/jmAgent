@@ -3,7 +3,6 @@ import { filesApi } from '@/api/endpoints'
 import { WorkspaceLeftPanel } from '@/components/WorkspaceLeftPanel'
 import { WorkspaceCenterPanel } from '@/components/WorkspaceCenterPanel'
 import { WorkspaceRightPanel } from '@/components/WorkspaceRightPanel'
-import { useCodeAction } from '@/hooks/useCodeAction'
 import { useChatStream } from '@/hooks/useChatStream'
 import type { FileInfo } from '@/types/files'
 import type { Model, ChatMessage } from '@/types/actions'
@@ -50,7 +49,14 @@ export const ProjectWorkspacePage = () => {
   const [selectedSkills, setSelectedSkills] = useState<Array<{ id: string; name: string }>>([])
   const [selectedFiles, setSelectedFiles] = useState<Set<string>>(new Set())
   const [allSkills, setAllSkills] = useState<Array<{ id: string; name: string; content: string; enabled: boolean; createdAt: number }>>([])
-  const [workflowSteps, setWorkflowSteps] = useState<Array<{ id: string; instruction: string; status: 'pending' | 'running' | 'done' | 'error'; result?: string }>>([])
+  const [workflowSteps, setWorkflowSteps] = useState<Array<{
+    id: string
+    instruction: string
+    status: 'pending' | 'running' | 'done' | 'error'
+    result?: string
+    contextFiles?: Array<{ path: string; content: string }>  // 단계별 컨텍스트 스냅샷
+    skills?: Array<{ id: string; name: string }>             // 단계별 스킬 스냅샷
+  }>>([])
   const [newStepInput, setNewStepInput] = useState('')
   const [isWorkflowRunning, setIsWorkflowRunning] = useState(false)
   const [streamProgress, setStreamProgress] = useState<string[]>([])
@@ -58,7 +64,6 @@ export const ProjectWorkspacePage = () => {
   const [isStreaming, setIsStreaming] = useState(false)
   const [isComposing, setIsComposing] = useState(false)  // Track IME composition
 
-  const { execute } = useCodeAction()
   const { sendChatStream } = useChatStream()
 
   // Load saved state on mount
@@ -203,6 +208,67 @@ export const ProjectWorkspacePage = () => {
     }
   }
 
+  // Parse file creation directives from Claude's response
+  // Format: [FILE_CREATE:{"path":"filename","content":"..."}]
+  const parseFileCreations = (content: string): { files: Array<{path: string; content: string}>; cleanContent: string } => {
+    const fileRegex = /\[FILE_CREATE:({[\s\S]*?})\]/g
+    const files: Array<{path: string; content: string}> = []
+    let cleanContent = content
+
+    let match
+    while ((match = fileRegex.exec(content)) !== null) {
+      try {
+        const fileObj = JSON.parse(match[1])
+        if (fileObj.path && fileObj.content) {
+          files.push(fileObj)
+          cleanContent = cleanContent.replace(match[0], '')
+        }
+      } catch {
+        // Skip malformed JSON
+      }
+    }
+
+    return { files, cleanContent: cleanContent.trim() }
+  }
+
+  // Create files in the project
+  const createFilesFromResponse = async (files: Array<{path: string; content: string}>): Promise<Array<{path: string; status: 'success' | 'error'; bytes?: number; error?: string}>> => {
+    if (files.length === 0) return []
+
+    const results: Array<{path: string; status: 'success' | 'error'; bytes?: number; error?: string}> = []
+
+    for (const file of files) {
+      try {
+        await filesApi.writeFile(file.path, file.content, true)
+        results.push({
+          path: file.path,
+          status: 'success',
+          bytes: file.content.length,
+        })
+      } catch (error) {
+        results.push({
+          path: file.path,
+          status: 'error',
+          error: error instanceof Error ? error.message : 'Unknown error',
+        })
+      }
+    }
+
+    return results
+  }
+
+  // Transform file creation results into status message
+  const buildFileStatusMessage = (results: Array<{path: string; status: 'success' | 'error'; bytes?: number; error?: string}>): string => {
+    const lines = results.map((r) => {
+      if (r.status === 'success') {
+        return `✅ ${r.path} 생성 완료 (${r.bytes} bytes)`
+      } else {
+        return `❌ ${r.path} 생성 실패: ${r.error}`
+      }
+    })
+    return lines.join('\n')
+  }
+
   const handleSendMessage = async () => {
     const input = chatInput.trim()
     if (!input) return
@@ -213,7 +279,7 @@ export const ProjectWorkspacePage = () => {
     setMessages((prev) => [...prev, userMsg])
     setChatInput('')
     setIsStreaming(true)
-    setStreamProgress(['🚀 작업 시작...'])
+    setStreamProgress([])  // Show simple loading spinner, no progress details
     setStreamStats(null)
 
     try {
@@ -275,8 +341,24 @@ export const ProjectWorkspacePage = () => {
         }
       }
 
-      // 2. Build message (NO history inlining — backend manages via conversation_id)
-      const message = contextPrefix + input
+      // 2. Build skill instructions (prepend to message)
+      let skillPrefix = ''
+      if (selectedSkills.length > 0) {
+        const selectedSkillContents = selectedSkills
+          .map((selected) => {
+            const skillDef = allSkills.find((s) => s.id === selected.id)
+            return skillDef ? skillDef.content : ''
+          })
+          .filter(Boolean)
+
+        if (selectedSkillContents.length > 0) {
+          skillPrefix = selectedSkillContents.join('\n\n---\n\n') + '\n\n'
+          console.log(`Using ${selectedSkillContents.length} skill(s)`)
+        }
+      }
+
+      // 3. Build message (NO history inlining — backend manages via conversation_id)
+      const message = skillPrefix + contextPrefix + input
 
       const totalTokens = estimateTokens(message)
       if (totalTokens > 8000) {
@@ -299,12 +381,39 @@ export const ProjectWorkspacePage = () => {
 
       setStreamProgress((prev) => [...prev, '📥 응답 처리 중...'])
 
-      // Add assistant message
-      const assistantMsg: ChatMessage = { role: 'assistant', content }
+      // Parse file creation directives from response
+      const { files: filesToCreate, cleanContent } = parseFileCreations(content)
+
+      let finalContent = cleanContent
+      let fileStatusMessage = ''
+
+      // Create files if any are specified
+      if (filesToCreate.length > 0) {
+        const creationResults = await createFilesFromResponse(filesToCreate)
+        fileStatusMessage = buildFileStatusMessage(creationResults)
+
+        // Reload file tree to show newly created files
+        try {
+          const res = await filesApi.listFiles('')
+          setFiles(res.files || [])
+        } catch {
+          console.error('Failed to reload file tree')
+        }
+
+        // Prepend file status to content (or replace if no other content)
+        if (finalContent) {
+          finalContent = fileStatusMessage + '\n\n' + finalContent
+        } else {
+          finalContent = fileStatusMessage
+        }
+      }
+
+      // Add assistant message with final content (file status + any remaining text)
+      const assistantMsg: ChatMessage = { role: 'assistant', content: finalContent }
       setMessages((prev) => [...prev, assistantMsg])
 
-      // Extract code blocks
-      const codeMatch = content.match(/```[\w]*\n([\s\S]*?)```/g)
+      // Extract code blocks (only from non-file-creation content)
+      const codeMatch = cleanContent.match(/```[\w]*\n([\s\S]*?)```/g)
       if (codeMatch) {
         const code = codeMatch
           .map((block: string) => block.replace(/```[\w]*\n/, '').replace(/```$/, ''))
@@ -539,14 +648,17 @@ Code generation rules
       toast.error('Please enter a step instruction')
       return
     }
+    // 단계 추가 시점에 현재 선택된 컨텍스트와 스킬을 스냅샷으로 저장
     const step = {
       id: Date.now().toString(),
       instruction: newStepInput,
       status: 'pending' as const,
+      contextFiles: [...contextFiles],  // 스냅샷
+      skills: [...selectedSkills],      // 스냅샷
     }
     setWorkflowSteps([...workflowSteps, step])
     setNewStepInput('')
-    toast.success('Step added')
+    toast.success(`Step added (${contextFiles.length} context files, ${selectedSkills.length} skills)`)
   }
 
   const handleRemoveWorkflowStep = (stepId: string) => {
@@ -564,45 +676,89 @@ Code generation rules
     setStreamStats(null)
     setIsStreaming(true)
 
+    let totalExecutionTime = 0
+    let totalInputTokens = 0
+    let totalOutputTokens = 0
+
     try {
       for (const step of workflowSteps) {
-        // Update step status
+        // Update step status to running
         setWorkflowSteps((prev) =>
           prev.map((s) =>
             s.id === step.id ? { ...s, status: 'running' as const } : s
           )
         )
 
-        // Add progress message
         setStreamProgress((prev) => [...prev, `▶️  Running: ${step.instruction}`])
 
         try {
-          // Execute step as chat message
-          let stepMessage = step.instruction
-          if (contextFiles.length > 0) {
-            const prefix = contextFiles.map((f) => `[${f.path}]\n${f.content}`).join('\n\n---\n\n')
-            stepMessage = `${prefix}\n\n${step.instruction}`
+          // 단계별 컨텍스트 사용 (없으면 전역 fallback)
+          const stepContextFiles = step.contextFiles ?? contextFiles
+          const stepSkills = step.skills ?? selectedSkills
+
+          // 스킬 프리픽스 build (handleSendMessage와 동일한 방식)
+          let skillPrefix = ''
+          if (stepSkills.length > 0) {
+            const selectedSkillContents = stepSkills
+              .map((selected) => {
+                const skillDef = allSkills.find((s) => s.id === selected.id)
+                return skillDef ? skillDef.content : ''
+              })
+              .filter(Boolean)
+
+            if (selectedSkillContents.length > 0) {
+              skillPrefix = selectedSkillContents.join('\n\n---\n\n') + '\n\n'
+            }
           }
 
-          const res = await execute({
-            action: 'chat',
-            params: { message: stepMessage, model },
+          // 컨텍스트 프리픽스 build
+          let contextPrefix = ''
+          if (stepContextFiles.length > 0) {
+            const contextLines = stepContextFiles.map((f) => `[${f.path}]\n${f.content}`)
+            contextPrefix = contextLines.join('\n\n---\n\n') + '\n\n'
+          }
+
+          // 최종 메시지
+          const stepMessage = skillPrefix + contextPrefix + step.instruction
+
+          // SSE 스트리밍 사용 (blocking execute 대신)
+          const result = await sendChatStream({
+            message: stepMessage,
+            conversation_id: conversationId,
+            model,
           })
 
-          setStreamProgress((prev) => [...prev, `✅ Complete: ${step.instruction}`])
+          if (!result) {
+            throw new Error('Stream cancelled')
+          }
 
-          // Update step status
-          setWorkflowSteps((prev) =>
-            prev.map((s) =>
-              s.id === step.id
-                ? { ...s, status: 'done' as const, result: res?.response }
-                : s
-            )
-          )
+          const { content, stats } = result
 
-          // Extract code if available
-          if (res?.response) {
-            const codeMatch = res.response.match(/```[\w]*\n([\s\S]*?)```/g)
+          // 파일 생성 처리
+          const { files: filesToCreate, cleanContent } = parseFileCreations(content)
+          let fileStatusMessage = ''
+
+          if (filesToCreate.length > 0) {
+            const creationResults = await createFilesFromResponse(filesToCreate)
+            fileStatusMessage = buildFileStatusMessage(creationResults)
+
+            // 파일 트리 다시 로드
+            try {
+              const res = await filesApi.listFiles('')
+              setFiles(res.files || [])
+            } catch {
+              console.error('Failed to reload file tree')
+            }
+          }
+
+          // 응답 저장
+          const finalContent = fileStatusMessage
+            ? fileStatusMessage + (cleanContent ? '\n\n' + cleanContent : '')
+            : cleanContent
+
+          // 코드 블록 추출
+          if (cleanContent) {
+            const codeMatch = cleanContent.match(/```[\w]*\n([\s\S]*?)```/g)
             if (codeMatch) {
               const code = codeMatch
                 .map((block: string) => block.replace(/```[\w]*\n/, '').replace(/```$/, ''))
@@ -610,7 +766,26 @@ Code generation rules
               setOutputCode(code)
             }
           }
+
+          // 단계 상태 업데이트
+          setWorkflowSteps((prev) =>
+            prev.map((s) =>
+              s.id === step.id
+                ? { ...s, status: 'done' as const, result: finalContent }
+                : s
+            )
+          )
+
+          setStreamProgress((prev) => [...prev, `✅ Complete: ${step.instruction}`])
+
+          // 토큰 누적
+          if (stats) {
+            totalExecutionTime += stats.executionTime
+            totalInputTokens += stats.tokensUsed.input
+            totalOutputTokens += stats.tokensUsed.output
+          }
         } catch (error) {
+          console.error('Workflow step error:', error)
           setStreamProgress((prev) => [...prev, `❌ Failed: ${step.instruction}`])
           setWorkflowSteps((prev) =>
             prev.map((s) =>
@@ -620,10 +795,14 @@ Code generation rules
         }
       }
 
-      // Set completion stats
+      // 최종 stats
       setStreamStats({
-        executionTime: workflowSteps.length,
-        tokensUsed: { input: 0, output: 0, total: 0 },
+        executionTime: totalExecutionTime,
+        tokensUsed: {
+          input: totalInputTokens,
+          output: totalOutputTokens,
+          total: totalInputTokens + totalOutputTokens,
+        },
       })
     } finally {
       setIsStreaming(false)

@@ -90,11 +90,8 @@ export const useChatStream = () => {
             const data = JSON.parse(eventStr)
 
             if (data.type === 'progress') {
-              // Real-time progress message
-              setState((prev) => ({
-                ...prev,
-                progress: [...prev.progress, data.message],
-              }))
+              // Skip progress updates - only show final result
+              // (Progress is logged server-side for debugging)
             } else if (data.type === 'token') {
               // Full response content (from backend)
               fullContent = data.content || ''

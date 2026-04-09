@@ -18,7 +18,14 @@ interface WorkspaceCenterPanelProps {
   selectedFiles: Set<string>
 
   // Workflow props
-  workflowSteps: Array<{ id: string; instruction: string; status: 'pending' | 'running' | 'done' | 'error'; result?: string }>
+  workflowSteps: Array<{
+    id: string
+    instruction: string
+    status: 'pending' | 'running' | 'done' | 'error'
+    result?: string
+    contextFiles?: Array<{ path: string; content: string }>
+    skills?: Array<{ id: string; name: string }>
+  }>
   newStepInput: string
   isWorkflowRunning: boolean
 
@@ -252,6 +259,34 @@ export const WorkspaceCenterPanel = ({
                         <span className="font-semibold text-sm text-slate-600 flex-shrink-0 w-6">{idx + 1}.</span>
                         <div className="flex-1 min-w-0">
                           <p className="text-sm font-medium text-slate-900 line-clamp-2">{step.instruction}</p>
+
+                          {/* 단계별 컨텍스트 파일 배지 */}
+                          {step.contextFiles && step.contextFiles.length > 0 && (
+                            <div className="flex flex-wrap gap-1 mt-1">
+                              {step.contextFiles.map((f) => (
+                                <span
+                                  key={f.path}
+                                  className="px-2 py-0.5 bg-blue-100 text-blue-700 rounded text-xs font-medium"
+                                  title={f.path}
+                                >
+                                  📄 {f.path.split('/').pop()}
+                                </span>
+                              ))}
+                            </div>
+                          )}
+
+                          {/* 단계별 스킬 배지 */}
+                          {step.skills && step.skills.length > 0 && (
+                            <div className="flex flex-wrap gap-1 mt-1">
+                              {step.skills.map((s) => (
+                                <span key={s.id} className="px-2 py-0.5 bg-purple-100 text-purple-700 rounded text-xs font-medium">
+                                  ✨ {s.name}
+                                </span>
+                              ))}
+                            </div>
+                          )}
+
+                          {/* 상태 표시 */}
                           {step.status === 'done' && <p className="text-xs text-green-600 mt-1">✅ Complete</p>}
                           {step.status === 'running' && <p className="text-xs text-blue-600 mt-1">▶️ Running...</p>}
                           {step.status === 'error' && <p className="text-xs text-red-600 mt-1">❌ Failed</p>}

@@ -271,12 +271,37 @@ export const WorkspaceLeftPanel = ({
                 className="w-full px-2 py-1 text-xs border border-slate-300 rounded font-mono max-h-24 resize-none focus:outline-none focus:ring-2 focus:ring-purple-500"
                 rows={3}
               />
-              <button
-                onClick={handleAddSkillClick}
-                className="w-full px-2 py-1 bg-purple-600 hover:bg-purple-700 text-white rounded text-xs font-medium"
-              >
-                Add Skill
-              </button>
+              <div className="flex gap-1 flex-wrap">
+                <button
+                  onClick={handleAddSkillClick}
+                  className="flex-1 px-2 py-1 bg-purple-600 hover:bg-purple-700 text-white rounded text-xs font-medium"
+                >
+                  Add Skill
+                </button>
+                <button
+                  onClick={() => {
+                    setNewSkillName('File Generator')
+                    setNewSkillContent(
+                      `You are a file generation expert. When instructed to create files, output ONLY the file creation directives in this exact format:
+
+[FILE_CREATE:{"path":"path/to/file.ext","content":"file content here"}]
+[FILE_CREATE:{"path":"path/to/another.ext","content":"content with \\n newlines"}]
+
+Rules:
+- Each file MUST be wrapped in [FILE_CREATE:{...}]
+- path: relative path from project root
+- content: the complete file content (use \\n for newlines)
+- Do NOT output anything except FILE_CREATE directives
+- Do NOT use markdown code blocks
+- Output multiple directives for multiple files`
+                    )
+                  }}
+                  className="px-2 py-1 bg-blue-500 hover:bg-blue-600 text-white rounded text-xs font-medium"
+                  title="Load file generation template"
+                >
+                  📝 Template
+                </button>
+              </div>
             </div>
           </div>
         )}
