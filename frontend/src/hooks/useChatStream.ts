@@ -1,6 +1,6 @@
 import { useState, useCallback, useRef } from 'react'
 import toast from 'react-hot-toast'
-import { API_BASE_URL, AUTH_HEADERS } from '@/utils/constants'
+import { API_BASE_URL } from '@/utils/constants'
 import { useAuthStore } from '@/store/authStore'
 import type { ChatRequest } from '@/types/actions'
 
@@ -50,11 +50,11 @@ export const useChatStream = () => {
           'Content-Type': 'application/json',
         }
 
-        // Add auth header
+        // Add auth header (fetch requires full header format, not like axios interceptor)
         if (authStore.token) {
-          headers[AUTH_HEADERS.BEARER] = authStore.token
+          headers['Authorization'] = `Bearer ${authStore.token}`
         } else if (authStore.apiKey) {
-          headers[AUTH_HEADERS.API_KEY] = authStore.apiKey
+          headers['X-API-Key'] = authStore.apiKey
         }
 
         const response = await fetch(`${API_BASE_URL}/agent/chat-stream`, {
