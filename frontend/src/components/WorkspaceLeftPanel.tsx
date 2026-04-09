@@ -13,6 +13,8 @@ interface WorkspaceLeftPanelProps {
   selectedSkills: Array<{ id: string; name: string }>
   selectedFiles: Set<string>
   allSkills: Array<{ id: string; name: string; content: string; enabled: boolean; createdAt: number }>
+  width: number  // 패널 너비 (px)
+  onResizeStart: () => void  // 리사이징 시작 콜백
 
   onOpenProject: (path: string) => void
   onProjectPathChange: (value: string) => void
@@ -42,6 +44,8 @@ export const WorkspaceLeftPanel = ({
   selectedSkills,
   selectedFiles,
   allSkills,
+  width,
+  onResizeStart,
   onOpenProject,
   onProjectPathChange,
   onRefreshFileTree,
@@ -201,7 +205,10 @@ export const WorkspaceLeftPanel = ({
   }
 
   return (
-    <div className="w-72 flex-shrink-0 border-r bg-white flex flex-col">
+    <div
+      className="flex-shrink-0 border-r bg-white flex flex-col relative group"
+      style={{ width: `${width}px` }}
+    >
       {/* Header */}
       <div className="p-3 border-b flex-shrink-0">
         <div className="flex items-center justify-between mb-2">
@@ -488,6 +495,13 @@ Rules:
           )}
         </div>
       </div>
+
+      {/* Resize Handle */}
+      <div
+        onMouseDown={onResizeStart}
+        className="absolute right-0 top-0 bottom-0 w-1 bg-slate-300 hover:bg-blue-500 cursor-col-resize opacity-0 group-hover:opacity-100 transition-opacity"
+        title="Drag to resize panel"
+      />
     </div>
   )
 }

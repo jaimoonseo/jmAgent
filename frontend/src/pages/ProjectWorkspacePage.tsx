@@ -63,8 +63,48 @@ export const ProjectWorkspacePage = () => {
   const [streamStats, setStreamStats] = useState<{ executionTime: number; tokensUsed: { input: number; output: number; total: number } } | null>(null)
   const [isStreaming, setIsStreaming] = useState(false)
   const [isComposing, setIsComposing] = useState(false)  // Track IME composition
+  const [leftPanelWidth, setLeftPanelWidth] = useState<number>(() => {
+    // localStorage에서 저장된 너비 복원 (기본값: 280px)
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('jmAgent:leftPanelWidth')
+      return saved ? parseInt(saved, 10) : 280
+    }
+    return 280
+  })
+  const [isResizing, setIsResizing] = useState(false)
 
   const { sendChatStream } = useChatStream()
+
+  // 리사이징 핸들러
+  useEffect(() => {
+    if (!isResizing) return
+
+    const handleMouseMove = (e: MouseEvent) => {
+      const newWidth = e.clientX
+      // 최소 200px ~ 최대 600px 범위 제한
+      if (newWidth >= 200 && newWidth <= 600) {
+        setLeftPanelWidth(newWidth)
+      }
+    }
+
+    const handleMouseUp = () => {
+      setIsResizing(false)
+    }
+
+    document.addEventListener('mousemove', handleMouseMove)
+    document.addEventListener('mouseup', handleMouseUp)
+    document.addEventListener('selectstart', (e) => e.preventDefault())
+
+    return () => {
+      document.removeEventListener('mousemove', handleMouseMove)
+      document.removeEventListener('mouseup', handleMouseUp)
+    }
+  }, [isResizing])
+
+  // 너비 변경 시 localStorage에 저장
+  useEffect(() => {
+    localStorage.setItem('jmAgent:leftPanelWidth', leftPanelWidth.toString())
+  }, [leftPanelWidth])
 
   // Load saved state on mount
   useEffect(() => {
@@ -822,6 +862,8 @@ Code generation rules
         selectedSkills={selectedSkills}
         selectedFiles={selectedFiles}
         allSkills={allSkills}
+        width={leftPanelWidth}
+        onResizeStart={() => setIsResizing(true)}
         onOpenProject={handleOpenProject}
         onProjectPathChange={setProjectPathInput}
         onRefreshFileTree={handleRefreshFileTree}
