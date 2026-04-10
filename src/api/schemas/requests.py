@@ -152,6 +152,8 @@ class ChatRequest(BaseModel):
 
     message: str = Field(..., min_length=1, description="Chat message")
     conversation_id: Optional[str] = Field(None, description="Conversation ID (UUID format, generates new if not provided)")
+    model: Optional[str] = Field(None, description="Model to use (haiku, sonnet, opus)")
+    max_tokens: Optional[int] = Field(None, ge=1, le=8192, description="Maximum output tokens (default: 4096, max: 8192)")
 
     class Config:
         json_schema_extra = {

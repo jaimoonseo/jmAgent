@@ -1,6 +1,7 @@
 import os
 import json
 import boto3
+from botocore.config import Config as BotoConfig
 from src.utils.logger import get_logger
 from src.errors.exceptions import (
     BedrockAPIError,
@@ -47,6 +48,13 @@ def build_bedrock_runtime(region: str = "us-east-1"):
     """
     auth_mode = detect_auth_mode()
 
+    # Increase read timeout for large output (max_tokens=8192 can take >60s)
+    boto_config = BotoConfig(
+        read_timeout=300,
+        connect_timeout=10,
+        retries={"max_attempts": 2},
+    )
+
     try:
         if auth_mode == "api_key":
             bearer = os.getenv("AWS_BEARER_TOKEN_BEDROCK", "").strip()
@@ -56,7 +64,7 @@ def build_bedrock_runtime(region: str = "us-east-1"):
             else:
                 logger.info("Using API Key authentication (ABSK from ACCESS_KEY)")
 
-            return boto3.client("bedrock-runtime", region_name=region)
+            return boto3.client("bedrock-runtime", region_name=region, config=boto_config)
 
         else:
             # IAM authentication
@@ -75,6 +83,7 @@ def build_bedrock_runtime(region: str = "us-east-1"):
                 region_name=region,
                 aws_access_key_id=access_key,
                 aws_secret_access_key=secret_key,
+                config=boto_config,
             )
     except ConfigurationError:
         raise

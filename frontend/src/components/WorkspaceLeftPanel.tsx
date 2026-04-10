@@ -13,6 +13,7 @@ interface WorkspaceLeftPanelProps {
   selectedSkills: Array<{ id: string; name: string }>
   selectedFiles: Set<string>
   allSkills: Array<{ id: string; name: string; content: string; enabled: boolean; createdAt: number }>
+  workflowSteps: any[]  // 워크플로우 단계들
   width: number  // 패널 너비 (px)
   onResizeStart: () => void  // 리사이징 시작 콜백
 
@@ -44,6 +45,7 @@ export const WorkspaceLeftPanel = ({
   selectedSkills,
   selectedFiles,
   allSkills,
+  workflowSteps,
   width,
   onResizeStart,
   onOpenProject,
@@ -70,6 +72,8 @@ export const WorkspaceLeftPanel = ({
   const [dirChildren, setDirChildren] = useState<Record<string, FileInfo[]>>({})
   const [savedSessions, setSavedSessions] = useState<any[]>([])
   const [sessionName, setSessionName] = useState('')
+  const [editingSkillId, setEditingSkillId] = useState<string | null>(null)
+  const [editingSkillContent, setEditingSkillContent] = useState('')
 
   // Load sessions on mount
   useEffect(() => {
@@ -102,6 +106,8 @@ export const WorkspaceLeftPanel = ({
       contextFiles: contextFiles.map((f) => ({ path: f.path })),
       messages: messages, // Save entire conversation history
       messageCount: messages.length,
+      workflowSteps: workflowSteps, // 모든 워크플로우 단계 저장
+      stepCount: workflowSteps.length,
     }
 
     const updated = [...savedSessions, session]
@@ -200,10 +206,6 @@ export const WorkspaceLeftPanel = ({
     setNewSkillContent('')
   }
 
-  const handleDeleteSkillClick = (id: string) => {
-    onDeleteSkill(id)
-  }
-
   return (
     <div
       className="flex-shrink-0 border-r bg-white flex flex-col relative group"
@@ -236,26 +238,76 @@ export const WorkspaceLeftPanel = ({
             <p className="text-xs font-semibold text-purple-700 mb-2">Skill Manager</p>
 
             {allSkills.length > 0 && (
-              <div className="space-y-1 mb-3 pb-3 border-b">
+              <div className="space-y-2 mb-3 pb-3 border-b">
                 {allSkills.map((skill) => {
                   const isSelected = selectedSkills.some((s) => s.id === skill.id)
+                  const isEditing = editingSkillId === skill.id
                   return (
-                    <div key={skill.id} className="flex items-center gap-2 p-1 bg-white rounded text-xs">
-                      <input
-                        type="checkbox"
-                        checked={isSelected}
-                        onChange={(e) => onSelectSkill({ id: skill.id, name: skill.name }, e.target.checked)}
-                        className="w-3 h-3"
-                      />
-                      <div className="flex-1 min-w-0">
-                        <p className="font-medium text-slate-900 truncate">{skill.name}</p>
-                      </div>
-                      <button
-                        onClick={() => handleDeleteSkillClick(skill.id)}
-                        className="px-2 py-1 bg-red-600 hover:bg-red-700 text-white rounded text-xs flex-shrink-0"
-                      >
-                        Delete
-                      </button>
+                    <div key={skill.id} className="flex flex-col gap-2 p-2 bg-white rounded border text-xs">
+                      {!isEditing ? (
+                        <>
+                          <div className="flex items-center gap-2">
+                            <input
+                              type="checkbox"
+                              checked={isSelected}
+                              onChange={(e) => onSelectSkill({ id: skill.id, name: skill.name }, e.target.checked)}
+                              className="w-3 h-3"
+                            />
+                            <div className="flex-1 min-w-0">
+                              <p className="font-medium text-slate-900 truncate">{skill.name}</p>
+                              <p className="text-slate-500 truncate">{skill.content.substring(0, 50)}...</p>
+                            </div>
+                          </div>
+                          <div className="flex gap-1 flex-shrink-0">
+                            <button
+                              onClick={() => {
+                                setEditingSkillId(skill.id)
+                                setEditingSkillContent(skill.content)
+                              }}
+                              className="flex-1 px-2 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded text-xs"
+                            >
+                              Edit
+                            </button>
+                            <button
+                              onClick={() => onDeleteSkill(skill.id)}
+                              className="flex-1 px-2 py-1 bg-red-600 hover:bg-red-700 text-white rounded text-xs"
+                            >
+                              Delete
+                            </button>
+                          </div>
+                        </>
+                      ) : (
+                        <>
+                          <p className="font-semibold text-slate-900">Editing: {skill.name}</p>
+                          <textarea
+                            value={editingSkillContent}
+                            onChange={(e) => setEditingSkillContent(e.target.value)}
+                            className="w-full px-2 py-1 border border-slate-300 rounded font-mono text-xs max-h-32 resize-none focus:outline-none focus:ring-2 focus:ring-blue-500"
+                            rows={4}
+                          />
+                          <div className="flex gap-1">
+                            <button
+                              onClick={() => {
+                                const updated = allSkills.map((s) =>
+                                  s.id === skill.id ? { ...s, content: editingSkillContent } : s
+                                )
+                                localStorage.setItem('jmAgent:workspace:skills', JSON.stringify(updated))
+                                toast.success('Skill updated')
+                                setEditingSkillId(null)
+                              }}
+                              className="flex-1 px-2 py-1 bg-green-600 hover:bg-green-700 text-white rounded text-xs"
+                            >
+                              Save
+                            </button>
+                            <button
+                              onClick={() => setEditingSkillId(null)}
+                              className="flex-1 px-2 py-1 bg-slate-400 hover:bg-slate-500 text-white rounded text-xs"
+                            >
+                              Cancel
+                            </button>
+                          </div>
+                        </>
+                      )}
                     </div>
                   )
                 })}

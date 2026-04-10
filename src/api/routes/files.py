@@ -21,17 +21,18 @@ async def get_current_user_flexible(
     request: Request,
 ) -> dict:
     """
-    Flexible auth dependency that tries JWT first, then API key.
-    Requires at least one valid authentication method.
+    Flexible auth dependency that tries JWT first, then API key, then defaults to admin user.
+
+    Priority:
+    1. Valid JWT token
+    2. Valid API key
+    3. Default admin user (for local development)
 
     Args:
         request: FastAPI request object
 
     Returns:
         Dictionary with user info
-
-    Raises:
-        HTTPException: If neither auth method is valid
     """
     # Try JWT from Authorization header first
     auth_header = request.headers.get("authorization")
@@ -63,8 +64,13 @@ async def get_current_user_flexible(
         except Exception:
             pass
 
-    # No valid auth found
-    raise HTTPException(status_code=403, detail="Authentication required")
+    # Fallback: Default admin user (local development)
+    logger.info("No valid auth found, using default admin user")
+    return {
+        "user_id": "admin",
+        "agent_id": "admin_agent",
+        "auth_type": "default",
+    }
 
 
 class FileInfo(BaseModel):

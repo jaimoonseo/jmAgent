@@ -32,7 +32,7 @@ export const useChatStream = () => {
   const abortRef = useRef<AbortController | null>(null)
 
   const sendChatStream = useCallback(
-    async (params: ChatRequest): Promise<{ content: string; stats: StreamStats | undefined } | null> => {
+    async (params: ChatRequest, onProgress?: (message: string) => void, onToken?: (content: string) => void): Promise<{ content: string; stats: StreamStats | undefined } | null> => {
       // Abort previous stream if still in progress
       abortRef.current?.abort()
       abortRef.current = new AbortController()
@@ -90,13 +90,25 @@ export const useChatStream = () => {
             const data = JSON.parse(eventStr)
 
             if (data.type === 'progress') {
-              // Skip progress updates - only show final result
-              // (Progress is logged server-side for debugging)
+              // Emit progress messages for UI display
+              setState((prev) => ({
+                ...prev,
+                progress: [...prev.progress, data.message],
+              }))
+              // Notify caller via callback (for workflow real-time updates)
+              onProgress?.(data.message)
             } else if (data.type === 'token') {
-              // Full response content (from backend)
-              fullContent = data.content || ''
+              // Accumulate response content (multiple tokens can be streamed)
+              if (data.content) {
+                fullContent += data.content
+                onToken?.(fullContent)
+              }
             } else if (data.type === 'complete') {
               // Stream complete with stats
+              // Use response from complete event if available, otherwise use accumulated content
+              if (data.response) {
+                fullContent = data.response
+              }
               streamStats =
                 data.tokens_used && data.execution_time
                   ? {
