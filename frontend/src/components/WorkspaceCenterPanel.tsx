@@ -47,6 +47,7 @@ interface WorkspaceCenterPanelProps {
   onRemoveStepContext?: (stepId: string, filePath: string) => void
   onRemoveStepSkill?: (stepId: string, skillId: string) => void
   onToggleStepDependency?: (stepId: string, depStepId: string) => void
+  onRerunStep?: (stepId: string) => void
 }
 
 export const WorkspaceCenterPanel = ({
@@ -80,10 +81,20 @@ export const WorkspaceCenterPanel = ({
   onRemoveStepContext,
   onRemoveStepSkill,
   onToggleStepDependency,
+  onRerunStep,
 }: WorkspaceCenterPanelProps) => {
   const messagesEndRef = useRef<HTMLDivElement>(null)
+  const streamingPreRef = useRef<HTMLPreElement>(null)
   const [editingStepId, setEditingStepId] = useState<string | null>(null)
   const [editingStepInstruction, setEditingStepInstruction] = useState('')
+
+  // 스트리밍 내용 변경 시 자동 스크롤
+  const runningStep = workflowSteps.find((s) => s.status === 'running')
+  useEffect(() => {
+    if (streamingPreRef.current) {
+      streamingPreRef.current.scrollTop = streamingPreRef.current.scrollHeight
+    }
+  }, [runningStep?.streamingContent])
 
   useEffect(() => {
     // Auto-scroll when messages or progress updates
@@ -323,7 +334,7 @@ export const WorkspaceCenterPanel = ({
                                 <div className="mt-1">
                                   <p className="text-xs text-blue-600">▶️ Running...</p>
                                   {step.streamingContent && (
-                                    <pre className="mt-1 p-2 bg-slate-900 text-green-400 text-xs rounded max-h-32 overflow-y-auto whitespace-pre-wrap break-words font-mono">
+                                    <pre ref={streamingPreRef} className="mt-1 p-2 bg-slate-900 text-green-400 text-xs rounded max-h-32 overflow-y-auto whitespace-pre-wrap break-words font-mono">
                                       {step.streamingContent}
                                     </pre>
                                   )}
@@ -331,7 +342,17 @@ export const WorkspaceCenterPanel = ({
                               )}
                               {step.status === 'error' && <p className="text-xs text-red-600 mt-1">❌ Failed{step.result ? `: ${step.result}` : ''}</p>}
                             </div>
-                            <div className="flex gap-2 flex-shrink-0">
+                            <div className="flex gap-1 flex-shrink-0">
+                              {(step.status === 'done' || step.status === 'error') && (
+                                <button
+                                  onClick={() => onRerunStep?.(step.id)}
+                                  disabled={isWorkflowRunning}
+                                  className="px-2 py-1 bg-orange-500 hover:bg-orange-600 text-white rounded text-xs disabled:bg-slate-400"
+                                  title="Re-run this step"
+                                >
+                                  Re-run
+                                </button>
+                              )}
                               <button
                                 onClick={() => {
                                   setEditingStepId(step.id)

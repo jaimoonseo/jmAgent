@@ -260,82 +260,23 @@ export const ProjectWorkspacePage = () => {
   }
 
   const inferFilename = (code: string, language: string, index: number): string => {
-    // Try to detect filename from content
+    // Try to detect explicit filename from content headers
     const lines = code.split('\n')
-
-    // Look for "## 파일: xxx.md" or "# xxxx.md" pattern (only in markdown headers)
     for (const line of lines.slice(0, 10)) {
-      // Skip lines that contain FILE_CREATE (Claude leftover)
-      if (line.includes('FILE_CREATE') || line.includes('[{')) continue
-
-      // Must start with # (markdown header) for explicit patterns
       if (!line.match(/^#+\s/)) continue
 
-      // Match "## 파일: sfc1001m00-PLAN.md"
+      // "## 파일: filename.ext"
       const fileMatch = line.match(/^#+\s+파일:\s*([a-zA-Z0-9._\-]+\.[a-z]+)/)
-      if (fileMatch) {
-        const filename = fileMatch[1].trim()
-        console.log(`    Found file pattern: ${filename}`)
-        return filename
-      }
+      if (fileMatch) return fileMatch[1].trim()
 
-      // Match "# sfc1001m00-PLAN.md" (exact filename in header)
+      // "# filename.ext" (exact filename in header)
       const headerMatch = line.match(/^#+\s+([a-zA-Z0-9._\-]+\.[a-z]+)$/)
-      if (headerMatch) {
-        const filename = headerMatch[1].trim()
-        console.log(`    Found header filename: ${filename}`)
-        return filename
-      }
-
-      // Match "# sfc1001m00 기획서" → extract screen name + PLAN.md
-      if (line.includes('기획')) {
-        const screenMatch = line.match(/^#+\s+([a-zA-Z0-9_]+)(?:\s|【|—|$)/)
-        if (screenMatch) {
-          const screenName = screenMatch[1].trim()
-          if (!screenName.includes('FILE_CREATE') && screenName.length < 50) {
-            const filename = screenName + '-PLAN.md'
-            console.log(`    Detected PLAN: ${filename}`)
-            return filename
-          }
-        }
-      }
-
-      // Match "# sfc1001m00 테스트" → extract screen name + TEST.md
-      if (line.includes('테스트') || line.includes('TEST')) {
-        const screenMatch = line.match(/^#+\s+([a-zA-Z0-9_]+)(?:\s|【|—|$)/)
-        if (screenMatch) {
-          const screenName = screenMatch[1].trim()
-          if (!screenName.includes('FILE_CREATE') && screenName.length < 50) {
-            const filename = screenName + '-TEST.md'
-            console.log(`    Detected TEST: ${filename}`)
-            return filename
-          }
-        }
-      }
-
-      // Match "# sfc1001m00 시뮬레이터" → extract screen name + simulator.html
-      if (line.includes('시뮬레이터') || line.includes('simulator')) {
-        const screenMatch = line.match(/^#+\s+([a-zA-Z0-9_]+)(?:\s|【|—|$)/)
-        if (screenMatch) {
-          const screenName = screenMatch[1].trim()
-          if (!screenName.includes('FILE_CREATE') && screenName.length < 50) {
-            const filename = screenName + '-simulator.html'
-            console.log(`    Detected simulator: ${filename}`)
-            return filename
-          }
-        }
-      }
+      if (headerMatch) return headerMatch[1].trim()
     }
 
-    // Default based on detected language
-    let filename = `output_${index}.txt`
-    if (language === 'html') filename = `output_${index}_simulator.html`
-    else if (language === 'markdown') filename = `output_${index}_document.md`
-    else if (language === 'python') filename = `output_${index}_script.py`
-    else if (language === 'javascript') filename = `output_${index}_script.js`
-
-    console.log(`    Fallback filename: ${filename}`)
-    return filename
+    // Fallback: language-based generic name
+    const ext: Record<string, string> = { html: 'html', markdown: 'md', python: 'py', javascript: 'js', typescript: 'ts', css: 'css', json: 'json', lua: 'lua' }
+    return `output_${index}.${ext[language] || 'txt'}`
   }
 
   const extractCodeBlocks = (content: string): { codeBlocks: CodeBlock[]; cleanContent: string } => {
@@ -412,62 +353,6 @@ export const ProjectWorkspacePage = () => {
       blockIndex++
     }
     cleanContent += content.substring(lastIndex)
-
-    // If no code blocks found but content is long (suggests multi-section output)
-    // Try Format 2: Split by --- separator (common in multi-file output)
-    if (codeBlocks.length === 0 && content.length > 2000) {
-      console.log(`📦 No explicit code blocks found. Trying Format 2 (section split)...`)
-
-      // Try multiple separator patterns (flexible)
-      let sections: string[] = []
-
-      // Pattern 1: \n---+\n (strict)
-      sections = content.split(/\n---+\n/).filter(s => s.trim().length > 0)
-      console.log(`  Pattern 1 (\\n---+\\n): ${sections.length} sections`)
-
-      // Pattern 2: if not found, try \n-{3,}\n (flexible newlines)
-      if (sections.length <= 1) {
-        sections = content.split(/\n-{3,}\n/).filter(s => s.trim().length > 0)
-        console.log(`  Pattern 2 (\\n-{3,}\\n): ${sections.length} sections`)
-      }
-
-      // Pattern 3: if still not found, try just --- on its own line
-      if (sections.length <= 1) {
-        sections = content.split(/^---+$/m).filter(s => s.trim().length > 0)
-        console.log(`  Pattern 3 (^---+$): ${sections.length} sections`)
-      }
-
-      // Pattern 4: if still not found, look for common markdown headers as section breaks
-      if (sections.length <= 1) {
-        sections = content.split(/\n##\s+/).filter(s => s.trim().length > 0)
-        if (sections.length > 1) {
-          // Prepend "## " back to sections (except first)
-          sections = sections.map((s, i) => (i === 0 ? s : '## ' + s))
-        }
-        console.log(`  Pattern 4 (\\n##\\s+): ${sections.length} sections`)
-      }
-
-      // Extract if we found multiple sections OR if single section is very large (entire response)
-      if (sections.length > 1 || (sections.length === 1 && content.length > 3000)) {
-        console.log(`✅ Found ${sections.length} section(s) to extract`)
-        for (let i = 0; i < sections.length; i++) {
-          const section = sections[i].trim()
-          // Detect language from content
-          let language = 'plaintext'
-          if (section.includes('<!DOCTYPE') || section.includes('<html')) language = 'html'
-          else if (section.includes('# ') || section.includes('| ')) language = 'markdown'
-          else if (section.includes('def ') || section.includes('import ')) language = 'python'
-          else if (section.includes('function ') || section.includes('const ')) language = 'javascript'
-
-          const suggestedFilename = inferFilename(section, language, blockIndex + i)
-          console.log(`  Block ${i}: language=${language}, filename=${suggestedFilename}`)
-          codeBlocks.push({ language, code: section, suggestedFilename })
-        }
-        cleanContent = ''
-      } else {
-        console.log(`⚠️ Could not detect multiple sections or large single section. Content treated as regular text.`)
-      }
-    }
 
     console.log(`📦 Extracted ${codeBlocks.length} blocks (${cleanContent.length} chars remaining)`)
     return { codeBlocks, cleanContent: cleanContent.trim() }
@@ -857,6 +742,23 @@ Code generation rules
     toast.success(`Skill "${skill.name}" added ✅`)
   }
 
+  const handleUpdateSkill = (skillId: string, content: string) => {
+    const updated = allSkills.map((s) =>
+      s.id === skillId ? { ...s, content } : s
+    )
+
+    try {
+      localStorage.setItem('jmAgent:workspace:skills', JSON.stringify(updated))
+    } catch (e) {
+      console.error('Failed to save skills to localStorage:', e)
+      toast.error('Failed to update skill')
+      return
+    }
+
+    setAllSkills(updated)
+    toast.success('Skill updated ✅')
+  }
+
   const handleDeleteSkill = (skillId: string) => {
     const updated = allSkills.filter((s) => s.id !== skillId)
 
@@ -949,6 +851,159 @@ Code generation rules
     )
   }
 
+  // 단일 step 실행 (워크플로우 전체 실행 및 re-run 공용)
+  const executeStep = async (
+    step: typeof workflowSteps[0],
+    completedStepFiles: Record<string, string[]>,
+  ): Promise<{ executionTime: number; inputTokens: number; outputTokens: number }> => {
+    // Update step status to running
+    setWorkflowSteps((prev) =>
+      prev.map((s) =>
+        s.id === step.id ? { ...s, status: 'running' as const, streamingContent: '' } : s
+      )
+    )
+    setStreamProgress((prev) => [...prev, `▶️  Running: ${step.instruction}`])
+
+    // 단계별 컨텍스트만 사용 (전역 fallback 없음)
+    let stepContextFiles = [...(step.contextFiles || [])]
+
+    // dependsOn: 이전 step의 생성 파일을 컨텍스트에 주입
+    if (step.dependsOn && step.dependsOn.length > 0) {
+      for (const depId of step.dependsOn) {
+        const depFiles = completedStepFiles[depId]
+        if (!depFiles) continue
+        for (const filePath of depFiles) {
+          if (stepContextFiles.some((f) => f.path === filePath)) continue
+          try {
+            const response = await filesApi.readFile(filePath)
+            stepContextFiles.push({ path: filePath, content: response.content })
+            setStreamProgress((prev) => [...prev, `  📎 Injected: ${filePath.split('/').pop()}`])
+          } catch {
+            setStreamProgress((prev) => [...prev, `  ⚠️ Failed to load: ${filePath}`])
+          }
+        }
+      }
+    }
+
+    // 단계별 스킬만 사용 (전역 fallback 없음)
+    const stepSkills = step.skills || []
+
+    // 스킬 프리픽스 build
+    const cleanSkillContent = (content: string): string => {
+      let cleaned = content.replace(/## 📤 출력 형식[\s\S]*?(?=\n## |$)/, '')
+      cleaned = cleaned.replace(/\[FILE_CREATE:[\s\S]*?\]/g, '')
+      cleaned = cleaned.replace(/Each file MUST be wrapped in \[FILE_CREATE[\s\S]*?multiple files/g, '')
+      return cleaned.trim()
+    }
+
+    let skillPrefix = ''
+    if (stepSkills.length > 0) {
+      const selectedSkillContents = stepSkills
+        .map((selected) => {
+          const skillDef = allSkills.find((s) => s.id === selected.id)
+          return skillDef ? cleanSkillContent(skillDef.content) : ''
+        })
+        .filter(Boolean)
+      if (selectedSkillContents.length > 0) {
+        skillPrefix = selectedSkillContents.join('\n\n---\n\n') + '\n\n'
+      }
+    }
+
+    // 컨텍스트 프리픽스 build
+    let contextPrefix = ''
+    if (stepContextFiles.length > 0) {
+      const contextLines = stepContextFiles.map((f) => `[${f.path}]\n${f.content}`)
+      contextPrefix = contextLines.join('\n\n---\n\n') + '\n\n'
+    }
+
+    const fileFormatInstruction = `
+
+[OUTPUT FORMAT - MANDATORY]
+파일 출력 시 반드시 아래 구분자를 사용하세요. 마크다운 코드블록(\`\`\`)은 사용하지 마세요.
+
+===FILE:파일명.확장자===
+파일 전체 내용 (줄바꿈 그대로, 이스케이프 없이)
+===END_FILE===
+
+`
+    const stepMessage = skillPrefix + contextPrefix + step.instruction + fileFormatInstruction
+    const stepConversationId = `workflow-${Date.now()}-${step.id}`
+
+    const stepIndex = workflowSteps.findIndex(s => s.id === step.id) + 1
+
+    const result = await sendChatStream({
+      message: stepMessage,
+      conversation_id: stepConversationId,
+      model,
+      max_tokens: 8192,
+    }, (progressMsg) => {
+      setStreamProgress((prev) => [...prev, `  [Step ${stepIndex}] ${progressMsg}`])
+    }, (accumulated) => {
+      setWorkflowSteps((prev) =>
+        prev.map((s) => s.id === step.id ? { ...s, streamingContent: accumulated } : s)
+      )
+    })
+
+    if (!result) {
+      throw new Error('Stream cancelled')
+    }
+
+    const { content, stats } = result
+
+    console.log(`\n📋 Step ${stepIndex} - Claude response received`)
+    console.log(`Response length: ${content.length} bytes`)
+
+    const { codeBlocks, cleanContent } = extractCodeBlocks(content)
+    let createdFilePaths: string[] = []
+
+    if (codeBlocks.length > 0) {
+      setOutputBlocks(codeBlocks)
+      setRightTab('output')
+
+      if (projectRoot) {
+        for (const block of codeBlocks) {
+          try {
+            console.log(`💾 [Auto-save] ${block.suggestedFilename}`)
+            await filesApi.writeFile(block.suggestedFilename, block.code, true)
+            createdFilePaths.push(block.suggestedFilename)
+            setStreamProgress((prev) => [...prev, `💾 Saved: ${block.suggestedFilename}`])
+          } catch (error) {
+            console.error(`Failed to auto-save ${block.suggestedFilename}:`, error)
+            setStreamProgress((prev) => [...prev, `⚠️ Failed to save: ${block.suggestedFilename}`])
+          }
+        }
+        try {
+          const filesRes = await filesApi.listFiles('')
+          setFiles(filesRes.files || [])
+        } catch (e) {
+          console.error('Failed to refresh file tree:', e)
+        }
+      }
+    }
+
+    const finalContent = cleanContent || content
+
+    setWorkflowSteps((prev) =>
+      prev.map((s) =>
+        s.id === step.id
+          ? { ...s, status: 'done' as const, result: finalContent, createdFiles: createdFilePaths, streamingContent: undefined }
+          : s
+      )
+    )
+
+    if (createdFilePaths.length > 0) {
+      completedStepFiles[step.id] = createdFilePaths
+    }
+
+    setStreamProgress((prev) => [...prev, `✅ Complete: ${step.instruction}`])
+
+    return {
+      executionTime: stats?.executionTime || 0,
+      inputTokens: stats?.tokensUsed.input || 0,
+      outputTokens: stats?.tokensUsed.output || 0,
+    }
+  }
+
   const handleRunWorkflow = async () => {
     if (workflowSteps.length === 0) {
       toast.error('No workflow steps to run')
@@ -964,179 +1019,15 @@ Code generation rules
     let totalInputTokens = 0
     let totalOutputTokens = 0
 
-    // 완료된 step의 생성 파일을 추적
     const completedStepFiles: Record<string, string[]> = {}
 
     try {
       for (const step of workflowSteps) {
-        // Update step status to running
-        setWorkflowSteps((prev) =>
-          prev.map((s) =>
-            s.id === step.id ? { ...s, status: 'running' as const } : s
-          )
-        )
-
-        setStreamProgress((prev) => [...prev, `▶️  Running: ${step.instruction}`])
-
         try {
-          // 단계별 컨텍스트만 사용 (전역 fallback 없음)
-          let stepContextFiles = [...(step.contextFiles || [])]
-
-          // dependsOn: 이전 step의 생성 파일을 컨텍스트에 주입
-          if (step.dependsOn && step.dependsOn.length > 0) {
-            for (const depId of step.dependsOn) {
-              const depFiles = completedStepFiles[depId]
-              if (!depFiles) continue
-              for (const filePath of depFiles) {
-                if (stepContextFiles.some((f) => f.path === filePath)) continue
-                try {
-                  const response = await filesApi.readFile(filePath)
-                  stepContextFiles.push({ path: filePath, content: response.content })
-                  setStreamProgress((prev) => [...prev, `  📎 Injected: ${filePath.split('/').pop()}`])
-                } catch {
-                  setStreamProgress((prev) => [...prev, `  ⚠️ Failed to load: ${filePath}`])
-                }
-              }
-            }
-          }
-          // 단계별 스킬만 사용 (전역 fallback 없음)
-          const stepSkills = step.skills || []
-
-          // 스킬 프리픽스 build (FILE_CREATE 제거 + 구분자 형식으로 교체)
-          const cleanSkillContent = (content: string): string => {
-            let cleaned = content.replace(/## 📤 출력 형식[\s\S]*?(?=\n## |$)/, '')
-            cleaned = cleaned.replace(/\[FILE_CREATE:[\s\S]*?\]/g, '')
-            cleaned = cleaned.replace(/Each file MUST be wrapped in \[FILE_CREATE[\s\S]*?multiple files/g, '')
-            return cleaned.trim()
-          }
-
-          let skillPrefix = ''
-          if (stepSkills.length > 0) {
-            const selectedSkillContents = stepSkills
-              .map((selected) => {
-                const skillDef = allSkills.find((s) => s.id === selected.id)
-                return skillDef ? cleanSkillContent(skillDef.content) : ''
-              })
-              .filter(Boolean)
-
-            if (selectedSkillContents.length > 0) {
-              skillPrefix = selectedSkillContents.join('\n\n---\n\n') + '\n\n'
-            }
-          }
-
-          // 컨텍스트 프리픽스 build
-          let contextPrefix = ''
-          if (stepContextFiles.length > 0) {
-            const contextLines = stepContextFiles.map((f) => `[${f.path}]\n${f.content}`)
-            contextPrefix = contextLines.join('\n\n---\n\n') + '\n\n'
-          }
-
-          // 파일 출력 구분자 포맷 지시 (명령어 뒤에 배치 - Claude가 마지막 지시를 잘 따름)
-          const fileFormatInstruction = `
-
-[OUTPUT FORMAT - MANDATORY]
-파일 출력 시 반드시 아래 구분자를 사용하세요. 마크다운 코드블록(\`\`\`)은 사용하지 마세요.
-
-===FILE:파일명.확장자===
-파일 전체 내용 (줄바꿈 그대로, 이스케이프 없이)
-===END_FILE===
-
-`
-          // 최종 메시지 (스킬 + 컨텍스트 + 명령 + 포맷 지시)
-          const stepMessage = skillPrefix + contextPrefix + step.instruction + fileFormatInstruction
-
-          // 각 워크플로우 단계마다 새 세션 (이전 컨텍스트 없이 독립 실행)
-          const stepConversationId = `workflow-${Date.now()}-${step.id}`
-
-          // SSE 스트리밍 사용 (blocking execute 대신)
-          // 워크플로우는 긴 문서 생성이 필요하므로 max_tokens를 높게 설정
-          const stepIndex = workflowSteps.findIndex(s => s.id === step.id) + 1
-          // 실행 전 streamingContent 초기화
-          setWorkflowSteps((prev) =>
-            prev.map((s) => s.id === step.id ? { ...s, streamingContent: '' } : s)
-          )
-
-          const result = await sendChatStream({
-            message: stepMessage,
-            conversation_id: stepConversationId,
-            model,
-            max_tokens: 8192,
-          }, (progressMsg) => {
-            // 실시간 progress 업데이트
-            setStreamProgress((prev) => [...prev, `  [Step ${stepIndex}] ${progressMsg}`])
-          }, (accumulated) => {
-            // 실시간 스트리밍 텍스트 업데이트
-            setWorkflowSteps((prev) =>
-              prev.map((s) => s.id === step.id ? { ...s, streamingContent: accumulated } : s)
-            )
-          })
-
-          if (!result) {
-            throw new Error('Stream cancelled')
-          }
-
-          const { content, stats } = result
-
-          // 코드 블록 추출 및 출력 표시
-          console.log(`\n📋 Step ${workflowSteps.findIndex(s => s.id === step.id) + 1} - Claude response received`)
-          console.log(`Response length: ${content.length} bytes`)
-
-          const { codeBlocks, cleanContent } = extractCodeBlocks(content)
-          let createdFilePaths: string[] = []
-
-          // 코드 블록이 있으면 output tab에 표시 및 자동 저장
-          if (codeBlocks.length > 0) {
-            setOutputBlocks(codeBlocks)
-            setRightTab('output')
-
-            // 자동 저장: 각 블록을 파일로 저장 (프로젝트가 열려있으면)
-            if (projectRoot) {
-              for (const block of codeBlocks) {
-                try {
-                  console.log(`💾 [Auto-save] ${block.suggestedFilename}`)
-                  await filesApi.writeFile(block.suggestedFilename, block.code, true)
-                  createdFilePaths.push(block.suggestedFilename)
-                  setStreamProgress((prev) => [...prev, `💾 Saved: ${block.suggestedFilename}`])
-                } catch (error) {
-                  console.error(`Failed to auto-save ${block.suggestedFilename}:`, error)
-                  setStreamProgress((prev) => [...prev, `⚠️ Failed to save: ${block.suggestedFilename}`])
-                }
-              }
-              // 파일 트리 갱신
-              try {
-                const filesRes = await filesApi.listFiles('')
-                setFiles(filesRes.files || [])
-              } catch (e) {
-                console.error('Failed to refresh file tree:', e)
-              }
-            }
-          }
-
-          // 응답 저장 (파일 생성 상태 메시지 제거 - 단순화)
-          const finalContent = cleanContent || content
-
-          // 단계 상태 업데이트 (생성된 파일 경로 저장)
-          setWorkflowSteps((prev) =>
-            prev.map((s) =>
-              s.id === step.id
-                ? { ...s, status: 'done' as const, result: finalContent, createdFiles: createdFilePaths, streamingContent: undefined }
-                : s
-            )
-          )
-
-          // 완료된 step의 생성 파일을 추적 (다음 step의 dependsOn용)
-          if (createdFilePaths.length > 0) {
-            completedStepFiles[step.id] = createdFilePaths
-          }
-
-          setStreamProgress((prev) => [...prev, `✅ Complete: ${step.instruction}`])
-
-          // 토큰 누적
-          if (stats) {
-            totalExecutionTime += stats.executionTime
-            totalInputTokens += stats.tokensUsed.input
-            totalOutputTokens += stats.tokensUsed.output
-          }
+          const result = await executeStep(step, completedStepFiles)
+          totalExecutionTime += result.executionTime
+          totalInputTokens += result.inputTokens
+          totalOutputTokens += result.outputTokens
         } catch (error) {
           const errorMsg = error instanceof Error ? error.message : 'Unknown error'
           console.error('Workflow step error:', error)
@@ -1144,13 +1035,12 @@ Code generation rules
           toast.error(`Step ${workflowSteps.findIndex(s => s.id === step.id) + 1} failed: ${errorMsg}`)
           setWorkflowSteps((prev) =>
             prev.map((s) =>
-              s.id === step.id ? { ...s, status: 'error' as const, result: errorMsg } : s
+              s.id === step.id ? { ...s, status: 'error' as const, result: errorMsg, streamingContent: undefined } : s
             )
           )
         }
       }
 
-      // 최종 stats
       setStreamStats({
         executionTime: totalExecutionTime,
         tokensUsed: {
@@ -1159,6 +1049,49 @@ Code generation rules
           total: totalInputTokens + totalOutputTokens,
         },
       })
+    } finally {
+      setIsStreaming(false)
+      setIsWorkflowRunning(false)
+    }
+  }
+
+  const handleRerunStep = async (stepId: string) => {
+    const step = workflowSteps.find((s) => s.id === stepId)
+    if (!step) return
+
+    setIsWorkflowRunning(true)
+    setStreamProgress([])
+    setStreamStats(null)
+    setIsStreaming(true)
+
+    // 이전 step들의 createdFiles를 수집 (dependsOn 해결용)
+    const completedStepFiles: Record<string, string[]> = {}
+    for (const s of workflowSteps) {
+      if (s.id === stepId) break
+      if (s.createdFiles && s.createdFiles.length > 0) {
+        completedStepFiles[s.id] = s.createdFiles
+      }
+    }
+
+    try {
+      const result = await executeStep(step, completedStepFiles)
+      setStreamStats({
+        executionTime: result.executionTime,
+        tokensUsed: {
+          input: result.inputTokens,
+          output: result.outputTokens,
+          total: result.inputTokens + result.outputTokens,
+        },
+      })
+    } catch (error) {
+      const errorMsg = error instanceof Error ? error.message : 'Unknown error'
+      setStreamProgress((prev) => [...prev, `❌ Failed: ${step.instruction} — ${errorMsg}`])
+      toast.error(`Re-run failed: ${errorMsg}`)
+      setWorkflowSteps((prev) =>
+        prev.map((s) =>
+          s.id === stepId ? { ...s, status: 'error' as const, result: errorMsg, streamingContent: undefined } : s
+        )
+      )
     } finally {
       setIsStreaming(false)
       setIsWorkflowRunning(false)
@@ -1195,6 +1128,7 @@ Code generation rules
         onAddSelectedFilesToContext={handleAddSelectedFilesToContext}
         onAddSkill={handleAddSkill}
         onDeleteSkill={handleDeleteSkill}
+        onUpdateSkill={handleUpdateSkill}
       />
 
       <WorkspaceCenterPanel
@@ -1240,6 +1174,7 @@ Code generation rules
         onRemoveStepContext={handleRemoveStepContext}
         onRemoveStepSkill={handleRemoveStepSkill}
         onToggleStepDependency={handleToggleStepDependency}
+        onRerunStep={handleRerunStep}
       />
 
       <WorkspaceRightPanel

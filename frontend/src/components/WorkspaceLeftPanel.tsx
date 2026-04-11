@@ -31,6 +31,7 @@ interface WorkspaceLeftPanelProps {
   onAddSelectedFilesToContext: () => void
   onAddSkill: (skillName: string, skillContent: string) => void
   onDeleteSkill: (skillId: string) => void
+  onUpdateSkill: (skillId: string, content: string) => void
 }
 
 const WORKSPACE_SESSIONS_KEY = 'jmAgent:workspace:sessions'
@@ -62,6 +63,7 @@ export const WorkspaceLeftPanel = ({
   onAddSelectedFilesToContext,
   onAddSkill,
   onDeleteSkill,
+  onUpdateSkill,
 }: WorkspaceLeftPanelProps) => {
   const [showInput, setShowInput] = useState(false)
   const [showSkillManager, setShowSkillManager] = useState(false)
@@ -288,11 +290,7 @@ export const WorkspaceLeftPanel = ({
                           <div className="flex gap-1">
                             <button
                               onClick={() => {
-                                const updated = allSkills.map((s) =>
-                                  s.id === skill.id ? { ...s, content: editingSkillContent } : s
-                                )
-                                localStorage.setItem('jmAgent:workspace:skills', JSON.stringify(updated))
-                                toast.success('Skill updated')
+                                onUpdateSkill(skill.id, editingSkillContent)
                                 setEditingSkillId(null)
                               }}
                               className="flex-1 px-2 py-1 bg-green-600 hover:bg-green-700 text-white rounded text-xs"
