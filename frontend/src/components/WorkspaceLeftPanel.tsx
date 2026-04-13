@@ -32,6 +32,8 @@ interface WorkspaceLeftPanelProps {
   onAddSkill: (skillName: string, skillContent: string) => void
   onDeleteSkill: (skillId: string) => void
   onUpdateSkill: (skillId: string, content: string) => void
+  onSetBatchFolder?: (path: string) => void
+  centerTab?: string
 }
 
 const WORKSPACE_SESSIONS_KEY = 'jmAgent:workspace:sessions'
@@ -64,6 +66,8 @@ export const WorkspaceLeftPanel = ({
   onAddSkill,
   onDeleteSkill,
   onUpdateSkill,
+  onSetBatchFolder,
+  centerTab,
 }: WorkspaceLeftPanelProps) => {
   const [showInput, setShowInput] = useState(false)
   const [showSkillManager, setShowSkillManager] = useState(false)
@@ -156,13 +160,24 @@ export const WorkspaceLeftPanel = ({
       <div key={file.path}>
         {file.type === 'directory' ? (
           <div>
-            <button
-              onClick={() => handleToggleDir(file.path)}
-              className="w-full text-left px-2 py-1 text-sm hover:bg-slate-100 rounded flex items-center gap-1"
-            >
-              <span className="w-4 text-xs">{expandedDirs.has(file.path) ? '▼' : '▶'}</span>
-              <span>📁 {file.name}</span>
-            </button>
+            <div className="flex items-center group">
+              <button
+                onClick={() => handleToggleDir(file.path)}
+                className="flex-1 text-left px-2 py-1 text-sm hover:bg-slate-100 rounded flex items-center gap-1"
+              >
+                <span className="w-4 text-xs">{expandedDirs.has(file.path) ? '▼' : '▶'}</span>
+                <span>📁 {file.name}</span>
+              </button>
+              {centerTab === 'batch' && onSetBatchFolder && (
+                <button
+                  onClick={() => onSetBatchFolder(file.path)}
+                  className="hidden group-hover:block px-1.5 py-0.5 bg-orange-500 hover:bg-orange-600 text-white text-xs rounded mr-1 flex-shrink-0"
+                  title="Set as batch target folder"
+                >
+                  Batch
+                </button>
+              )}
+            </div>
             {expandedDirs.has(file.path) && dirChildren[file.path] && (
               <div style={{ paddingLeft: `${level * 12 + 12}px` }}>
                 {renderFileTree(dirChildren[file.path], level + 1)}

@@ -40,7 +40,7 @@ export const ProjectWorkspacePage = () => {
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [chatInput, setChatInput] = useState('')
   const [model, setModel] = useState<Model>('haiku')
-  const [centerTab, setCenterTab] = useState<'chat' | 'workflow'>('chat')
+  const [centerTab, setCenterTab] = useState<'chat' | 'workflow' | 'batch'>('chat')
   const [rightTab, setRightTab] = useState<'output' | 'agentmd' | 'file'>('output')
   const [outputBlocks, setOutputBlocks] = useState<CodeBlock[]>([])
   const [agentMdContent, setAgentMdContent] = useState('')
@@ -74,6 +74,34 @@ export const ProjectWorkspacePage = () => {
     return 280
   })
   const [isResizing, setIsResizing] = useState(false)
+
+  // Workflow templates
+  const [workflowTemplates, setWorkflowTemplates] = useState<Array<{
+    id: string
+    name: string
+    steps: Array<{
+      instruction: string
+      skills?: Array<{ id: string; name: string }>
+      dependsOn?: string[]  // relative index references: '0', '1', ...
+      excludeBatchTarget?: boolean
+    }>
+  }>>([])
+
+  // Batch mode state
+  const [batchFolder, setBatchFolder] = useState('')
+  const [batchFileFilter, setBatchFileFilter] = useState('')
+  const [batchFiles, setBatchFiles] = useState<Array<{ path: string; name: string }>>([])
+  const [batchSelectedFiles, setBatchSelectedFiles] = useState<Set<string>>(new Set())
+  const [batchTemplateId, setBatchTemplateId] = useState<string>('')
+  const [isBatchRunning, setIsBatchRunning] = useState(false)
+  const [batchProgress, setBatchProgress] = useState<Array<{
+    file: string
+    status: 'pending' | 'running' | 'done' | 'error'
+    currentStep?: number
+    totalSteps?: number
+    error?: string
+  }>>([])
+  const [batchConcurrency, setBatchConcurrency] = useState(1)
 
   const { sendChatStream } = useChatStream()
 
@@ -173,6 +201,16 @@ export const ProjectWorkspacePage = () => {
       }
     } catch (e) {
       console.error('Failed to load skills:', e)
+    }
+  }, [])
+
+  // Load workflow templates from localStorage on mount
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem('jmAgent:workspace:workflowTemplates')
+      if (saved) setWorkflowTemplates(JSON.parse(saved))
+    } catch (e) {
+      console.error('Failed to load workflow templates:', e)
     }
   }, [])
 
@@ -1098,7 +1136,306 @@ Code generation rules
     }
   }
 
-  // Confirmation dialog for adding context from previous step
+  // === Workflow Template handlers ===
+  const handleSaveWorkflowTemplate = (name: string) => {
+    if (!name.trim() || workflowSteps.length === 0) return
+    const template = {
+      id: Date.now().toString(),
+      name: name.trim(),
+      steps: workflowSteps.map((s) => ({
+        instruction: s.instruction,
+        skills: s.skills,
+        dependsOn: s.dependsOn?.map((depId) => {
+          const depIdx = workflowSteps.findIndex((ws) => ws.id === depId)
+          return depIdx >= 0 ? depIdx.toString() : ''
+        }).filter(Boolean),
+      })),
+    }
+    const updated = [...workflowTemplates, template]
+    setWorkflowTemplates(updated)
+    localStorage.setItem('jmAgent:workspace:workflowTemplates', JSON.stringify(updated))
+    toast.success(`Template "${name}" saved`)
+  }
+
+  const handleLoadWorkflowTemplate = (templateId: string) => {
+    const template = workflowTemplates.find((t) => t.id === templateId)
+    if (!template) return
+
+    // Generate new step IDs and map dependsOn from index references
+    const newStepIds = template.steps.map(() => Date.now().toString() + Math.random().toString(36).slice(2, 6))
+    const steps = template.steps.map((ts, idx) => ({
+      id: newStepIds[idx],
+      instruction: ts.instruction,
+      status: 'pending' as const,
+      contextFiles: [...contextFiles],
+      skills: ts.skills || [],
+      dependsOn: ts.dependsOn?.map((depIdx) => newStepIds[parseInt(depIdx)]).filter(Boolean),
+      excludeBatchTarget: ts.excludeBatchTarget,
+    }))
+    setWorkflowSteps(steps)
+    toast.success(`Template "${template.name}" loaded`)
+  }
+
+  const handleDeleteWorkflowTemplate = (templateId: string) => {
+    const updated = workflowTemplates.filter((t) => t.id !== templateId)
+    setWorkflowTemplates(updated)
+    localStorage.setItem('jmAgent:workspace:workflowTemplates', JSON.stringify(updated))
+    toast.success('Template deleted')
+  }
+
+  // === Batch mode handlers ===
+  const SKIP_DIRS = new Set(['.git', 'node_modules', '__pycache__', '.next', '.venv', 'venv', 'dist', '.tox', '.mypy_cache'])
+  const MAX_DEPTH = 5
+
+  const listFilesRecursive = async (folderPath: string, depth = 0): Promise<Array<{ path: string; name: string }>> => {
+    if (depth > MAX_DEPTH) return []
+    const result: Array<{ path: string; name: string }> = []
+    const res = await filesApi.listFiles(folderPath)
+    for (const item of (res.files || [])) {
+      if (item.type === 'file') {
+        result.push({ path: item.path, name: item.name })
+      } else if (item.type === 'directory' && !SKIP_DIRS.has(item.name)) {
+        const subFiles = await listFilesRecursive(item.path, depth + 1)
+        result.push(...subFiles)
+      }
+    }
+    return result
+  }
+
+  const handleBatchLoadFolder = async () => {
+    if (!batchFolder.trim()) {
+      toast.error('Enter a folder path')
+      return
+    }
+    if (!projectRoot) {
+      toast.error('Open a project first')
+      return
+    }
+    try {
+      // Strip leading/trailing slashes for relative path
+      const cleanPath = batchFolder.trim().replace(/^\/+|\/+$/g, '')
+      const allFiles = await listFilesRecursive(cleanPath)
+      setBatchFiles(allFiles)
+      setBatchSelectedFiles(new Set(allFiles.map((f) => f.path)))
+      toast.success(`Found ${allFiles.length} files`)
+    } catch (error: any) {
+      console.error('Batch folder load error:', error)
+      const detail = error?.response?.data?.detail || error?.message || 'Unknown error'
+      toast.error(`Failed: ${detail}`)
+    }
+  }
+
+  const getFilteredBatchFiles = () => {
+    if (!batchFileFilter.trim()) return batchFiles
+    try {
+      const regex = new RegExp(batchFileFilter, 'i')
+      return batchFiles.filter((f) => regex.test(f.path))
+    } catch {
+      return batchFiles.filter((f) => f.path.toLowerCase().includes(batchFileFilter.toLowerCase()))
+    }
+  }
+
+  const handleToggleBatchFile = (path: string) => {
+    setBatchSelectedFiles((prev) => {
+      const next = new Set(prev)
+      if (next.has(path)) next.delete(path)
+      else next.add(path)
+      return next
+    })
+  }
+
+  const handleToggleAllBatchFiles = () => {
+    const filtered = getFilteredBatchFiles()
+    const allSelected = filtered.every((f) => batchSelectedFiles.has(f.path))
+    if (allSelected) {
+      setBatchSelectedFiles((prev) => {
+        const next = new Set(prev)
+        filtered.forEach((f) => next.delete(f.path))
+        return next
+      })
+    } else {
+      setBatchSelectedFiles((prev) => {
+        const next = new Set(prev)
+        filtered.forEach((f) => next.add(f.path))
+        return next
+      })
+    }
+  }
+
+  const executeBatchForFile = async (
+    filePath: string,
+    templateSteps: typeof workflowTemplates[0]['steps'],
+    fileIndex: number,
+  ) => {
+    // Read target file content
+    let targetContent: string
+    try {
+      const res = await filesApi.readFile(filePath)
+      targetContent = res.content
+    } catch {
+      throw new Error(`Failed to read ${filePath}`)
+    }
+
+    const targetContext = { path: filePath, content: targetContent }
+
+    // Generate step IDs for this batch run
+    const stepIds = templateSteps.map((_, i) => `batch-${Date.now()}-${fileIndex}-${i}`)
+    const completedStepFiles: Record<string, string[]> = {}
+
+    for (let i = 0; i < templateSteps.length; i++) {
+      const ts = templateSteps[i]
+
+      // Update batch progress
+      setBatchProgress((prev) =>
+        prev.map((p) => p.file === filePath ? { ...p, status: 'running', currentStep: i + 1 } : p)
+      )
+
+      // Build step context: inject target file unless excluded
+      const stepContextFiles = ts.excludeBatchTarget ? [] : [targetContext]
+
+      // Resolve dependsOn
+      const depIds = ts.dependsOn?.map((depIdx) => stepIds[parseInt(depIdx)]).filter(Boolean)
+
+      const step = {
+        id: stepIds[i],
+        instruction: ts.instruction,
+        status: 'pending' as const,
+        contextFiles: stepContextFiles,
+        skills: ts.skills || [],
+        dependsOn: depIds,
+      }
+
+      // Inject dependency files
+      if (depIds && depIds.length > 0) {
+        for (const depId of depIds) {
+          const depFiles = completedStepFiles[depId]
+          if (!depFiles) continue
+          for (const fp of depFiles) {
+            if (step.contextFiles.some((f) => f.path === fp)) continue
+            try {
+              const res = await filesApi.readFile(fp)
+              step.contextFiles.push({ path: fp, content: res.content })
+            } catch {
+              // skip
+            }
+          }
+        }
+      }
+
+      // Build skill prefix
+      const cleanSkillContent = (content: string): string => {
+        let cleaned = content.replace(/## 📤 출력 형식[\s\S]*?(?=\n## |$)/, '')
+        cleaned = cleaned.replace(/\[FILE_CREATE:[\s\S]*?\]/g, '')
+        cleaned = cleaned.replace(/Each file MUST be wrapped in \[FILE_CREATE[\s\S]*?multiple files/g, '')
+        return cleaned.trim()
+      }
+
+      let skillPrefix = ''
+      const stepSkills = step.skills || []
+      if (stepSkills.length > 0) {
+        const contents = stepSkills
+          .map((selected) => {
+            const skillDef = allSkills.find((s) => s.id === selected.id)
+            return skillDef ? cleanSkillContent(skillDef.content) : ''
+          })
+          .filter(Boolean)
+        if (contents.length > 0) skillPrefix = contents.join('\n\n---\n\n') + '\n\n'
+      }
+
+      let contextPrefix = ''
+      if (step.contextFiles.length > 0) {
+        contextPrefix = step.contextFiles.map((f) => `[${f.path}]\n${f.content}`).join('\n\n---\n\n') + '\n\n'
+      }
+
+      const fileFormatInstruction = `\n\n[OUTPUT FORMAT - MANDATORY]\n파일 출력 시 반드시 아래 구분자를 사용하세요. 마크다운 코드블록(\`\`\`)은 사용하지 마세요.\n\n===FILE:파일명.확장자===\n파일 전체 내용 (줄바꿈 그대로, 이스케이프 없이)\n===END_FILE===\n\n`
+      const stepMessage = skillPrefix + contextPrefix + step.instruction + fileFormatInstruction
+      const stepConversationId = `batch-${Date.now()}-${fileIndex}-${i}`
+
+      const result = await sendChatStream({
+        message: stepMessage,
+        conversation_id: stepConversationId,
+        model,
+        max_tokens: 8192,
+      })
+
+      if (!result) throw new Error('Stream cancelled')
+
+      const { content } = result
+      const { codeBlocks } = extractCodeBlocks(content)
+
+      if (codeBlocks.length > 0 && projectRoot) {
+        const createdPaths: string[] = []
+        for (const block of codeBlocks) {
+          try {
+            await filesApi.writeFile(block.suggestedFilename, block.code, true)
+            createdPaths.push(block.suggestedFilename)
+          } catch {
+            // skip
+          }
+        }
+        completedStepFiles[stepIds[i]] = createdPaths
+      }
+    }
+
+    // Refresh file tree after batch file complete
+    try {
+      const filesRes = await filesApi.listFiles('')
+      setFiles(filesRes.files || [])
+    } catch {
+      // ignore
+    }
+  }
+
+  const handleRunBatch = async () => {
+    const template = workflowTemplates.find((t) => t.id === batchTemplateId)
+    if (!template) {
+      toast.error('Select a workflow template')
+      return
+    }
+
+    const selectedPaths = Array.from(batchSelectedFiles).filter((p) =>
+      getFilteredBatchFiles().some((f) => f.path === p)
+    )
+
+    if (selectedPaths.length === 0) {
+      toast.error('No files selected')
+      return
+    }
+
+    setIsBatchRunning(true)
+    setBatchProgress(selectedPaths.map((p) => ({
+      file: p,
+      status: 'pending',
+      totalSteps: template.steps.length,
+    })))
+
+    // Run in parallel batches of batchConcurrency
+    const queue = [...selectedPaths]
+    const runNext = async () => {
+      while (queue.length > 0) {
+        const filePath = queue.shift()!
+        const fileIndex = selectedPaths.indexOf(filePath)
+        try {
+          await executeBatchForFile(filePath, template.steps, fileIndex)
+          setBatchProgress((prev) =>
+            prev.map((p) => p.file === filePath ? { ...p, status: 'done', currentStep: template.steps.length } : p)
+          )
+        } catch (error) {
+          const errorMsg = error instanceof Error ? error.message : 'Unknown error'
+          setBatchProgress((prev) =>
+            prev.map((p) => p.file === filePath ? { ...p, status: 'error', error: errorMsg } : p)
+          )
+        }
+      }
+    }
+
+    const workers = Array.from({ length: Math.min(batchConcurrency, selectedPaths.length) }, () => runNext())
+    await Promise.all(workers)
+
+    setIsBatchRunning(false)
+    toast.success(`Batch complete: ${selectedPaths.length} files processed`)
+  }
+
   return (
     <div className="flex flex-row w-full h-full bg-slate-50">
       <WorkspaceLeftPanel
@@ -1129,6 +1466,21 @@ Code generation rules
         onAddSkill={handleAddSkill}
         onDeleteSkill={handleDeleteSkill}
         onUpdateSkill={handleUpdateSkill}
+        onSetBatchFolder={(path: string) => {
+          setBatchFolder(path)
+          setCenterTab('batch')
+          // Auto-load after setting folder
+          const cleanPath = path.replace(/^\/+|\/+$/g, '')
+          listFilesRecursive(cleanPath).then((allFiles) => {
+            setBatchFiles(allFiles)
+            setBatchSelectedFiles(new Set(allFiles.map((f) => f.path)))
+            toast.success(`Found ${allFiles.length} files in ${path}`)
+          }).catch((err) => {
+            console.error('Batch folder load error:', err)
+            toast.error(`Failed to load: ${err?.response?.data?.detail || err?.message}`)
+          })
+        }}
+        centerTab={centerTab}
       />
 
       <WorkspaceCenterPanel
@@ -1175,6 +1527,30 @@ Code generation rules
         onRemoveStepSkill={handleRemoveStepSkill}
         onToggleStepDependency={handleToggleStepDependency}
         onRerunStep={handleRerunStep}
+        // Template props
+        workflowTemplates={workflowTemplates}
+        onSaveWorkflowTemplate={handleSaveWorkflowTemplate}
+        onLoadWorkflowTemplate={handleLoadWorkflowTemplate}
+        onDeleteWorkflowTemplate={handleDeleteWorkflowTemplate}
+        // Batch props
+        projectFiles={files}
+        batchFolder={batchFolder}
+        batchAllFiles={batchFiles}
+        batchFileFilter={batchFileFilter}
+        batchFiles={getFilteredBatchFiles()}
+        batchSelectedFiles={batchSelectedFiles}
+        batchTemplateId={batchTemplateId}
+        isBatchRunning={isBatchRunning}
+        batchProgress={batchProgress}
+        batchConcurrency={batchConcurrency}
+        onBatchFolderChange={setBatchFolder}
+        onBatchFileFilterChange={setBatchFileFilter}
+        onBatchLoadFolder={handleBatchLoadFolder}
+        onToggleBatchFile={handleToggleBatchFile}
+        onToggleAllBatchFiles={handleToggleAllBatchFiles}
+        onBatchTemplateChange={setBatchTemplateId}
+        onBatchConcurrencyChange={setBatchConcurrency}
+        onRunBatch={handleRunBatch}
       />
 
       <WorkspaceRightPanel
