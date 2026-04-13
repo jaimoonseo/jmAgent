@@ -741,7 +741,7 @@ export const WorkspaceCenterPanel = ({
                     disabled={isBatchRunning}
                     className="text-xs text-primary-600 hover:text-primary-800 font-medium disabled:opacity-50"
                   >
-                    {batchFiles?.every((f) => batchSelectedFiles?.has(f.path)) ? 'Deselect All' : 'Select All'}
+                    {(batchFiles?.length ?? 0) > 0 && batchFiles?.every((f) => batchSelectedFiles?.has(f.path)) ? 'Deselect All' : 'Select All'}
                   </button>
                 </div>
 

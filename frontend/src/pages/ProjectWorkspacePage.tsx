@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { filesApi } from '@/api/endpoints'
 import { WorkspaceLeftPanel } from '@/components/WorkspaceLeftPanel'
 import { WorkspaceCenterPanel } from '@/components/WorkspaceCenterPanel'
@@ -7,6 +7,29 @@ import { useChatStream } from '@/hooks/useChatStream'
 import type { FileInfo } from '@/types/files'
 import type { Model, ChatMessage } from '@/types/actions'
 import toast from 'react-hot-toast'
+
+// Shared skill content cleaner — removes FILE_CREATE format artifacts
+const cleanSkillContent = (content: string): string => {
+  let cleaned = content.replace(/## 📤 출력 형식[\s\S]*?(?=\n## |$)/, '')
+  cleaned = cleaned.replace(/\[FILE_CREATE:[\s\S]*?\]/g, '')
+  cleaned = cleaned.replace(/Each file MUST be wrapped in \[FILE_CREATE[\s\S]*?multiple files/g, '')
+  return cleaned.trim()
+}
+
+// Build skill prefix from skill list + allSkills lookup
+const buildSkillPrefix = (
+  skillList: Array<{ id: string; name: string }>,
+  allSkills: Array<{ id: string; name: string; content: string; enabled: boolean; createdAt: number }>
+): string => {
+  if (skillList.length === 0) return ''
+  const contents = skillList
+    .map((s) => {
+      const def = allSkills.find((a) => a.id === s.id)
+      return def ? cleanSkillContent(def.content) : ''
+    })
+    .filter(Boolean)
+  return contents.length > 0 ? contents.join('\n\n---\n\n') + '\n\n' : ''
+}
 
 // Generate UUID for conversation ID
 const generateUUID = () => {
@@ -233,19 +256,26 @@ export const ProjectWorkspacePage = () => {
     }
   }, [])
 
-  // Save batch progress to localStorage whenever it changes
+  // Save batch progress to localStorage — debounced 800ms to avoid excessive I/O
+  const batchSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   useEffect(() => {
     if (batchProgress.length === 0) return
-    try {
-      localStorage.setItem('jmAgent:batch:progress', JSON.stringify({
-        jobId: batchJobId,
-        progress: batchProgress,
-        folder: batchFolder,
-        templateId: batchTemplateId,
-        savedAt: Date.now(),
-      }))
-    } catch (e) {
-      console.error('Failed to save batch progress:', e)
+    if (batchSaveTimerRef.current) clearTimeout(batchSaveTimerRef.current)
+    batchSaveTimerRef.current = setTimeout(() => {
+      try {
+        localStorage.setItem('jmAgent:batch:progress', JSON.stringify({
+          jobId: batchJobId,
+          progress: batchProgress,
+          folder: batchFolder,
+          templateId: batchTemplateId,
+          savedAt: Date.now(),
+        }))
+      } catch (e) {
+        console.error('Failed to save batch progress:', e)
+      }
+    }, 800)
+    return () => {
+      if (batchSaveTimerRef.current) clearTimeout(batchSaveTimerRef.current)
     }
   }, [batchProgress])
 
@@ -529,32 +559,8 @@ export const ProjectWorkspacePage = () => {
         }
       }
 
-      // 2. Build skill instructions (prepend to message)
-      // Clean skill content: remove FILE_CREATE format and replace with delimiter format
-      const cleanSkillContent = (content: string): string => {
-        // Remove the entire "📤 출력 형식" section that contains FILE_CREATE
-        let cleaned = content.replace(/## 📤 출력 형식[\s\S]*?(?=\n## |$)/, '')
-        // Also remove any standalone FILE_CREATE references
-        cleaned = cleaned.replace(/\[FILE_CREATE:[\s\S]*?\]/g, '')
-        // Remove "File Generator" template instructions
-        cleaned = cleaned.replace(/Each file MUST be wrapped in \[FILE_CREATE[\s\S]*?multiple files/g, '')
-        return cleaned.trim()
-      }
-
-      let skillPrefix = ''
-      if (selectedSkills.length > 0) {
-        const selectedSkillContents = selectedSkills
-          .map((selected) => {
-            const skillDef = allSkills.find((s) => s.id === selected.id)
-            return skillDef ? cleanSkillContent(skillDef.content) : ''
-          })
-          .filter(Boolean)
-
-        if (selectedSkillContents.length > 0) {
-          skillPrefix = selectedSkillContents.join('\n\n---\n\n') + '\n\n'
-          console.log(`Using ${selectedSkillContents.length} skill(s) (FILE_CREATE cleaned)`)
-        }
-      }
+      // 2. Build skill prefix
+      const skillPrefix = buildSkillPrefix(selectedSkills, allSkills)
 
       // 3. Build message (NO history inlining — backend manages via conversation_id)
       // File format instruction placed AFTER skill (Claude follows last instruction best)
@@ -982,27 +988,7 @@ Code generation rules
 
     // 단계별 스킬만 사용 (전역 fallback 없음)
     const stepSkills = step.skills || []
-
-    // 스킬 프리픽스 build
-    const cleanSkillContent = (content: string): string => {
-      let cleaned = content.replace(/## 📤 출력 형식[\s\S]*?(?=\n## |$)/, '')
-      cleaned = cleaned.replace(/\[FILE_CREATE:[\s\S]*?\]/g, '')
-      cleaned = cleaned.replace(/Each file MUST be wrapped in \[FILE_CREATE[\s\S]*?multiple files/g, '')
-      return cleaned.trim()
-    }
-
-    let skillPrefix = ''
-    if (stepSkills.length > 0) {
-      const selectedSkillContents = stepSkills
-        .map((selected) => {
-          const skillDef = allSkills.find((s) => s.id === selected.id)
-          return skillDef ? cleanSkillContent(skillDef.content) : ''
-        })
-        .filter(Boolean)
-      if (selectedSkillContents.length > 0) {
-        skillPrefix = selectedSkillContents.join('\n\n---\n\n') + '\n\n'
-      }
-    }
+    const skillPrefix = buildSkillPrefix(stepSkills, allSkills)
 
     // 컨텍스트 프리픽스 build
     let contextPrefix = ''
@@ -1216,7 +1202,21 @@ Code generation rules
 
   const handleLoadWorkflowTemplate = (templateId: string) => {
     const template = workflowTemplates.find((t) => t.id === templateId)
-    if (!template) return
+    if (!template) {
+      toast.error('Template not found')
+      return
+    }
+
+    // Validate skill references — warn about any that no longer exist
+    const missingSkills = new Set<string>()
+    for (const ts of template.steps) {
+      for (const sk of ts.skills || []) {
+        if (!allSkills.find((a) => a.id === sk.id)) missingSkills.add(sk.name)
+      }
+    }
+    if (missingSkills.size > 0) {
+      toast.error(`Missing skills: ${[...missingSkills].join(', ')} — steps loaded without them`)
+    }
 
     // Generate new step IDs and map dependsOn from index references
     const newStepIds = template.steps.map(() => Date.now().toString() + Math.random().toString(36).slice(2, 6))
@@ -1225,7 +1225,8 @@ Code generation rules
       instruction: ts.instruction,
       status: 'pending' as const,
       contextFiles: [...contextFiles],
-      skills: ts.skills || [],
+      // Filter out skills that no longer exist
+      skills: (ts.skills || []).filter((sk) => allSkills.some((a) => a.id === sk.id)),
       dependsOn: ts.dependsOn?.map((depIdx) => newStepIds[parseInt(depIdx)]).filter(Boolean),
       excludeBatchTarget: ts.excludeBatchTarget,
     }))
@@ -1303,20 +1304,19 @@ Code generation rules
 
   const handleToggleAllBatchFiles = () => {
     const filtered = getFilteredBatchFiles()
-    const allSelected = filtered.every((f) => batchSelectedFiles.has(f.path))
-    if (allSelected) {
-      setBatchSelectedFiles((prev) => {
-        const next = new Set(prev)
+    // "all selected" = every visible (filtered) file is checked
+    const allFilteredSelected = filtered.length > 0 && filtered.every((f) => batchSelectedFiles.has(f.path))
+    setBatchSelectedFiles((prev) => {
+      const next = new Set(prev)
+      if (allFilteredSelected) {
+        // Deselect only the filtered files — non-visible selections preserved
         filtered.forEach((f) => next.delete(f.path))
-        return next
-      })
-    } else {
-      setBatchSelectedFiles((prev) => {
-        const next = new Set(prev)
+      } else {
+        // Select all filtered files — non-visible selections preserved
         filtered.forEach((f) => next.add(f.path))
-        return next
-      })
-    }
+      }
+      return next
+    })
   }
 
   const executeBatchForFile = async (
@@ -1381,24 +1381,7 @@ Code generation rules
       }
 
       // Build skill prefix
-      const cleanSkillContent = (content: string): string => {
-        let cleaned = content.replace(/## 📤 출력 형식[\s\S]*?(?=\n## |$)/, '')
-        cleaned = cleaned.replace(/\[FILE_CREATE:[\s\S]*?\]/g, '')
-        cleaned = cleaned.replace(/Each file MUST be wrapped in \[FILE_CREATE[\s\S]*?multiple files/g, '')
-        return cleaned.trim()
-      }
-
-      let skillPrefix = ''
-      const stepSkills = step.skills || []
-      if (stepSkills.length > 0) {
-        const contents = stepSkills
-          .map((selected) => {
-            const skillDef = allSkills.find((s) => s.id === selected.id)
-            return skillDef ? cleanSkillContent(skillDef.content) : ''
-          })
-          .filter(Boolean)
-        if (contents.length > 0) skillPrefix = contents.join('\n\n---\n\n') + '\n\n'
-      }
+      const skillPrefix = buildSkillPrefix(step.skills || [], allSkills)
 
       let contextPrefix = ''
       if (step.contextFiles.length > 0) {
