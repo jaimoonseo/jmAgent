@@ -157,20 +157,22 @@ export const ProjectWorkspacePage = () => {
           console.error('Failed to load file tree')
         }
 
-        // 3. Load context files
+        // 3. Load context files — use allSettled so partial failures don't wipe all context
         if (savedState.contextFiles && savedState.contextFiles.length > 0) {
-          try {
-            const contextPromises = savedState.contextFiles.map((f: any) =>
-              filesApi.readFile(f.path).then((res) => ({
-                path: f.path,
-                content: res.content,
-              }))
-            )
-            const loaded = await Promise.all(contextPromises)
-            setContextFiles(loaded)
-            console.log('Context files loaded:', loaded.length, 'files')
-          } catch {
-            console.error('Failed to load context files')
+          const contextPromises = savedState.contextFiles.map((f: any) =>
+            filesApi.readFile(f.path).then((res) => ({
+              path: f.path,
+              content: res.content,
+            }))
+          )
+          const results = await Promise.allSettled(contextPromises)
+          const loaded = results
+            .filter((r): r is PromiseFulfilledResult<{ path: string; content: string }> => r.status === 'fulfilled')
+            .map((r) => r.value)
+          const failed = results.filter((r) => r.status === 'rejected').length
+          setContextFiles(loaded)
+          if (failed > 0) {
+            toast.error(`${failed} context file(s) could not be restored (file may have moved or been deleted)`)
           }
         }
 
@@ -246,6 +248,28 @@ export const ProjectWorkspacePage = () => {
       console.error('Failed to save batch progress:', e)
     }
   }, [batchProgress])
+
+  // Flush batch progress to localStorage before tab close (catches in-progress runs)
+  useEffect(() => {
+    const handleBeforeUnload = () => {
+      if (batchProgress.length === 0) return
+      // Mark any 'running' steps as 'pending' so they resume cleanly
+      const flushed = batchProgress.map((p) =>
+        p.status === 'running' ? { ...p, status: 'pending' as const, currentStep: undefined } : p
+      )
+      try {
+        localStorage.setItem('jmAgent:batch:progress', JSON.stringify({
+          jobId: batchJobId,
+          progress: flushed,
+          folder: batchFolder,
+          templateId: batchTemplateId,
+          savedAt: Date.now(),
+        }))
+      } catch { /* ignore */ }
+    }
+    window.addEventListener('beforeunload', handleBeforeUnload)
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload)
+  }, [batchProgress, batchJobId, batchFolder, batchTemplateId])
 
   // Auto-save workspace state
   useEffect(() => {
@@ -1311,8 +1335,9 @@ Code generation rules
 
     const targetContext = { path: filePath, content: targetContent }
 
-    // Generate step IDs for this batch run
-    const stepIds = templateSteps.map((_, i) => `batch-${Date.now()}-${fileIndex}-${i}`)
+    // Generate step IDs — use fileIndex + crypto random to avoid collision across parallel workers
+    const runToken = Math.random().toString(36).slice(2, 8)
+    const stepIds = templateSteps.map((_, i) => `batch-${fileIndex}-${i}-${runToken}`)
     const completedStepFiles: Record<string, string[]> = {}
 
     for (let i = 0; i < templateSteps.length; i++) {
