@@ -143,13 +143,21 @@ export const WorkspaceCenterPanel = ({
   const [templateNameInput, setTemplateNameInput] = useState('')
   const [showTemplateSave, setShowTemplateSave] = useState(false)
 
-  // 스트리밍 내용 변경 시 자동 스크롤
+  // 스트리밍 중 auto-scroll: content 변경 + 100ms interval(무응답 구간 대응)
   const runningStep = workflowSteps.find((s) => s.status === 'running')
-  useEffect(() => {
+  const scrollToBottom = () => {
     if (streamingPreRef.current) {
       streamingPreRef.current.scrollTop = streamingPreRef.current.scrollHeight
     }
+  }
+  useEffect(() => {
+    scrollToBottom()
   }, [runningStep?.streamingContent])
+  useEffect(() => {
+    if (!runningStep) return
+    const id = setInterval(scrollToBottom, 300)
+    return () => clearInterval(id)
+  }, [!!runningStep])
 
   useEffect(() => {
     // Auto-scroll when messages or progress updates
@@ -848,34 +856,35 @@ export const WorkspaceCenterPanel = ({
                 </div>
                 <div className="max-h-64 overflow-y-auto border rounded divide-y">
                   {batchProgress.map((p, idx) => (
-                    <div
-                      key={idx}
-                      className={`flex items-center gap-2 px-2 py-1.5 text-xs ${
+                    <div key={idx}>
+                      <div className={`flex items-center gap-2 px-2 py-1.5 text-xs ${
                         p.status === 'done' ? 'bg-green-50' :
                         p.status === 'running' ? 'bg-blue-50' :
                         p.status === 'error' ? 'bg-red-50' : 'bg-white'
-                      }`}
-                    >
-                      {/* Checkbox indicator */}
-                      <span className="flex-shrink-0 w-4 text-center">
-                        {p.status === 'done' && <span className="text-green-600">✓</span>}
-                        {p.status === 'running' && <span className="text-blue-500">▶</span>}
-                        {p.status === 'error' && <span className="text-red-500">✗</span>}
-                        {p.status === 'pending' && <span className="text-slate-300">○</span>}
-                      </span>
-                      <span className="font-mono truncate flex-1" title={p.file}>
-                        {p.file}
-                      </span>
-                      <span className="flex-shrink-0 text-right">
-                        {p.status === 'pending' && <span className="text-slate-400">-</span>}
-                        {p.status === 'running' && (
-                          <span className="text-blue-600">{p.currentStep}/{p.totalSteps}</span>
-                        )}
-                        {p.status === 'done' && <span className="text-green-600">Done</span>}
-                        {p.status === 'error' && (
-                          <span className="text-red-600" title={p.error}>Failed</span>
-                        )}
-                      </span>
+                      }`}>
+                        <span className="flex-shrink-0 w-4 text-center">
+                          {p.status === 'done' && <span className="text-green-600">✓</span>}
+                          {p.status === 'running' && <span className="text-blue-500">▶</span>}
+                          {p.status === 'error' && <span className="text-red-500">✗</span>}
+                          {p.status === 'pending' && <span className="text-slate-300">○</span>}
+                        </span>
+                        <span className="font-mono truncate flex-1" title={p.file}>
+                          {p.file}
+                        </span>
+                        <span className="flex-shrink-0 text-right">
+                          {p.status === 'pending' && <span className="text-slate-400">-</span>}
+                          {p.status === 'running' && (
+                            <span className="text-blue-600">{p.currentStep}/{p.totalSteps}</span>
+                          )}
+                          {p.status === 'done' && <span className="text-green-600">Done</span>}
+                          {p.status === 'error' && <span className="text-red-600">Failed</span>}
+                        </span>
+                      </div>
+                      {p.status === 'error' && p.error && (
+                        <div className="px-6 py-1 text-xs text-red-700 font-mono bg-red-50 break-all border-t border-red-100">
+                          {p.error}
+                        </div>
+                      )}
                     </div>
                   ))}
                 </div>

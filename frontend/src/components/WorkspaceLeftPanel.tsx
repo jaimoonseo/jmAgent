@@ -74,12 +74,35 @@ export const WorkspaceLeftPanel = ({
   const [showSessions, setShowSessions] = useState(false)
   const [newSkillName, setNewSkillName] = useState('')
   const [newSkillContent, setNewSkillContent] = useState('')
-  const [expandedDirs, setExpandedDirs] = useState<Set<string>>(new Set())
+  const [expandedDirs, setExpandedDirs] = useState<Set<string>>(() => {
+    try {
+      const saved = localStorage.getItem('jmAgent:expandedDirs')
+      return saved ? new Set(JSON.parse(saved)) : new Set()
+    } catch { return new Set() }
+  })
   const [dirChildren, setDirChildren] = useState<Record<string, FileInfo[]>>({})
   const [savedSessions, setSavedSessions] = useState<any[]>([])
   const [sessionName, setSessionName] = useState('')
   const [editingSkillId, setEditingSkillId] = useState<string | null>(null)
   const [editingSkillContent, setEditingSkillContent] = useState('')
+
+  // Restore expanded dirs: load children for saved expanded dirs when projectRoot is set
+  useEffect(() => {
+    if (!projectRoot || expandedDirs.size === 0) return
+    const load = async () => {
+      const childMap: Record<string, FileInfo[]> = {}
+      await Promise.allSettled(
+        [...expandedDirs].map(async (dirPath) => {
+          try {
+            const res = await filesApi.listFiles(dirPath)
+            childMap[dirPath] = res.files || []
+          } catch { /* dir may no longer exist — skip */ }
+        })
+      )
+      setDirChildren(childMap)
+    }
+    load()
+  }, [projectRoot])
 
   // Load sessions on mount
   useEffect(() => {
@@ -136,12 +159,10 @@ export const WorkspaceLeftPanel = ({
   }
 
   const handleToggleDir = async (dirPath: string) => {
+    let nextDirs: Set<string>
     if (expandedDirs.has(dirPath)) {
-      setExpandedDirs((prev) => {
-        const next = new Set(prev)
-        next.delete(dirPath)
-        return next
-      })
+      nextDirs = new Set(expandedDirs)
+      nextDirs.delete(dirPath)
     } else {
       if (!dirChildren[dirPath]) {
         try {
@@ -149,10 +170,15 @@ export const WorkspaceLeftPanel = ({
           setDirChildren((prev) => ({ ...prev, [dirPath]: res.files || [] }))
         } catch {
           toast.error('Failed to load directory')
+          return
         }
       }
-      setExpandedDirs((prev) => new Set(prev).add(dirPath))
+      nextDirs = new Set(expandedDirs).add(dirPath)
     }
+    setExpandedDirs(nextDirs)
+    try {
+      localStorage.setItem('jmAgent:expandedDirs', JSON.stringify([...nextDirs]))
+    } catch { /* ignore */ }
   }
 
   const renderFileTree = (fileList: FileInfo[], level = 0): JSX.Element[] => {

@@ -1096,6 +1096,17 @@ Code generation rules
     setStreamStats(null)
     setIsStreaming(true)
 
+    // Reset all steps to pending and clear previous run artifacts
+    setWorkflowSteps((prev) =>
+      prev.map((s) => ({
+        ...s,
+        status: 'pending' as const,
+        result: undefined,
+        createdFiles: undefined,
+        streamingContent: undefined,
+      }))
+    )
+
     let totalExecutionTime = 0
     let totalInputTokens = 0
     let totalOutputTokens = 0
