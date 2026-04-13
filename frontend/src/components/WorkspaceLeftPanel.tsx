@@ -19,7 +19,7 @@ interface WorkspaceLeftPanelProps {
 
   onOpenProject: (path: string) => void
   onProjectPathChange: (value: string) => void
-  onRefreshFileTree: () => void
+  onRefreshFileTree: () => Promise<void> | void
   onRemoveContext: (path: string) => void
   onFileView: (file: FileInfo) => void
   onAddToContext: (file: FileInfo) => void
@@ -85,6 +85,7 @@ export const WorkspaceLeftPanel = ({
   const [sessionName, setSessionName] = useState('')
   const [editingSkillId, setEditingSkillId] = useState<string | null>(null)
   const [editingSkillContent, setEditingSkillContent] = useState('')
+  const [isRefreshing, setIsRefreshing] = useState(false)
 
   // Restore expanded dirs: load children for saved expanded dirs when projectRoot is set
   useEffect(() => {
@@ -561,10 +562,14 @@ Rules:
         {projectRoot && (
           <div className="p-2 border-t flex-shrink-0 space-y-1">
             <button
-              onClick={onRefreshFileTree}
-              className="w-full px-3 py-1 bg-slate-200 hover:bg-slate-300 rounded text-xs font-medium"
+              onClick={async () => {
+                setIsRefreshing(true)
+                try { await onRefreshFileTree() } finally { setIsRefreshing(false) }
+              }}
+              disabled={isRefreshing}
+              className="w-full px-3 py-1 bg-slate-200 hover:bg-slate-300 rounded text-xs font-medium disabled:opacity-60"
             >
-              🔄 Refresh
+              {isRefreshing ? '⏳ Refreshing...' : '🔄 Refresh'}
             </button>
             {selectedFiles.size > 0 && (
               <button

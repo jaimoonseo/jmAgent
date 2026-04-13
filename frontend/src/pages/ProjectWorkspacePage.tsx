@@ -175,7 +175,6 @@ export const ProjectWorkspacePage = () => {
           await filesApi.setProjectRoot(savedState.projectRoot)
           const filesRes = await filesApi.listFiles('')
           setFiles(filesRes.files || [])
-          console.log('File tree loaded:', filesRes.files?.length, 'items')
         } catch {
           console.error('Failed to load file tree')
         }
@@ -203,7 +202,6 @@ export const ProjectWorkspacePage = () => {
         try {
           const agentRes = await filesApi.readFile('agent.md')
           setAgentMdContent(agentRes.content)
-          console.log('agent.md loaded')
         } catch {
           // no agent.md yet
         }
@@ -219,10 +217,8 @@ export const ProjectWorkspacePage = () => {
   useEffect(() => {
     try {
       const saved = localStorage.getItem('jmAgent:workspace:skills')
-      console.log('Loading skills from localStorage:', saved)
       if (saved) {
         const parsed = JSON.parse(saved)
-        console.log('Parsed skills:', parsed)
         setAllSkills(parsed)
       }
     } catch (e) {
@@ -423,13 +419,11 @@ export const ProjectWorkspacePage = () => {
       else if (filename.endsWith('.js') || filename.endsWith('.ts')) language = 'javascript'
 
       codeBlocks.push({ language, code: fileContent, suggestedFilename: filename })
-      console.log(`  ✅ ${filename} (${language}, ${fileContent.length} bytes)`)
     }
 
     if (codeBlocks.length > 0) {
       // Remove the file blocks from display content
       cleanContent = content.replace(/===FILE:.+?===\n[\s\S]*?===END_FILE===/g, '').trim()
-      console.log(`🎉 Extracted ${codeBlocks.length} file(s) via delimiter format`)
       return { codeBlocks, cleanContent }
     }
 
@@ -453,12 +447,10 @@ export const ProjectWorkspacePage = () => {
       else if (filename.endsWith('.js') || filename.endsWith('.ts')) language = 'javascript'
 
       truncatedBlocks.push({ language, code: actualContent, suggestedFilename: filename })
-      console.log(`  ⚠️ ${filename} (truncated, ${actualContent.length} bytes)`)
     }
 
     if (truncatedBlocks.length > 0) {
       cleanContent = ''
-      console.log(`🔧 Extracted ${truncatedBlocks.length} file(s) via truncated delimiter format`)
       return { codeBlocks: truncatedBlocks, cleanContent }
     }
 
@@ -479,7 +471,6 @@ export const ProjectWorkspacePage = () => {
     }
     cleanContent += content.substring(lastIndex)
 
-    console.log(`📦 Extracted ${codeBlocks.length} blocks (${cleanContent.length} chars remaining)`)
     return { codeBlocks, cleanContent: cleanContent.trim() }
   }
 
@@ -553,9 +544,6 @@ export const ProjectWorkspacePage = () => {
 
         if (contextLines.length > 0) {
           contextPrefix = contextLines.join('\n\n---\n\n') + '\n\n---\n\n'
-          console.log(
-            `Context files: ${contextLines.length}/${contextFiles.length} files (${totalContextTokens} tokens)`
-          )
         }
       }
 
@@ -626,7 +614,6 @@ export const ProjectWorkspacePage = () => {
 
   // Save a single output block
   const handleSaveBlock = async (block: CodeBlock, _index: number) => {
-    console.log(`💾 Saving block: ${block.suggestedFilename}, projectRoot=${projectRoot}, codeLength=${block.code.length}`)
 
     if (!projectRoot) {
       navigator.clipboard.writeText(block.code)
@@ -636,9 +623,7 @@ export const ProjectWorkspacePage = () => {
 
     try {
       const savePath = block.suggestedFilename
-      console.log(`  Writing file: ${savePath}`)
       await filesApi.writeFile(savePath, block.code, true)
-      console.log(`  ✅ File written successfully`)
       toast.success(`✅ Saved: ${savePath}`)
       const res = await filesApi.listFiles('')
       setFiles(res.files || [])
@@ -650,7 +635,6 @@ export const ProjectWorkspacePage = () => {
 
   // Save all output blocks at once
   const handleSaveAllOutput = async () => {
-    console.log(`💾 SaveAll: ${outputBlocks.length} blocks, projectRoot=${projectRoot}`)
 
     if (outputBlocks.length === 0) {
       toast.error('No output to save')
@@ -669,9 +653,7 @@ export const ProjectWorkspacePage = () => {
       let saved = 0
       for (const block of outputBlocks) {
         try {
-          console.log(`  Saving: ${block.suggestedFilename}`)
           await filesApi.writeFile(block.suggestedFilename, block.code, true)
-          console.log(`  ✅ Saved: ${block.suggestedFilename}`)
           saved++
         } catch (e) {
           console.error(`  ❌ Failed to save ${block.suggestedFilename}`, e)
@@ -764,7 +746,6 @@ Code generation rules
       // 2. Restore conversation history
       if (session.messages && session.messages.length > 0) {
         setMessages(session.messages)
-        console.log('Restored conversation with', session.messages.length, 'messages')
       }
 
       // 3. Load context files
@@ -790,7 +771,6 @@ Code generation rules
           status: s.status === 'running' ? 'pending' : s.status,
         })))
         setCenterTab('workflow')  // Switch to workflow tab
-        console.log(`Restored ${session.workflowSteps.length} workflow steps`)
       }
 
       toast.success(`✅ Restored session: ${session.name} (${session.messageCount} messages, ${session.stepCount || 0} steps)`)
@@ -831,7 +811,6 @@ Code generation rules
     // Save to localStorage first
     try {
       localStorage.setItem('jmAgent:workspace:skills', JSON.stringify(updated))
-      console.log('Skill saved to localStorage:', updated)
     } catch (e) {
       console.error('Failed to save skills to localStorage:', e)
       toast.error('Failed to save skill')
@@ -866,7 +845,6 @@ Code generation rules
     // Save to localStorage first
     try {
       localStorage.setItem('jmAgent:workspace:skills', JSON.stringify(updated))
-      console.log('Skill deleted and saved to localStorage:', updated)
     } catch (e) {
       console.error('Failed to save skills to localStorage:', e)
       toast.error('Failed to delete skill')
@@ -1031,8 +1009,6 @@ Code generation rules
 
     const { content, stats } = result
 
-    console.log(`\n📋 Step ${stepIndex} - Claude response received`)
-    console.log(`Response length: ${content.length} bytes`)
 
     const { codeBlocks, cleanContent } = extractCodeBlocks(content)
     let createdFilePaths: string[] = []
@@ -1044,7 +1020,6 @@ Code generation rules
       if (projectRoot) {
         for (const block of codeBlocks) {
           try {
-            console.log(`💾 [Auto-save] ${block.suggestedFilename}`)
             await filesApi.writeFile(block.suggestedFilename, block.code, true)
             createdFilePaths.push(block.suggestedFilename)
             setStreamProgress((prev) => [...prev, `💾 Saved: ${block.suggestedFilename}`])
@@ -1602,11 +1577,9 @@ Code generation rules
         }}
         onCompositionStart={() => {
           setIsComposing(true)
-          console.log('IME composition started')
         }}
         onCompositionEnd={() => {
           setIsComposing(false)
-          console.log('IME composition ended')
         }}
         onAddWorkflowStep={handleAddWorkflowStep}
         onRemoveWorkflowStep={handleRemoveWorkflowStep}

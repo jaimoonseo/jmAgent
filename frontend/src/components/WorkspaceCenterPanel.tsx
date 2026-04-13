@@ -142,6 +142,7 @@ export const WorkspaceCenterPanel = ({
   const [editingStepInstruction, setEditingStepInstruction] = useState('')
   const [templateNameInput, setTemplateNameInput] = useState('')
   const [showTemplateSave, setShowTemplateSave] = useState(false)
+  const [loadTemplateValue, setLoadTemplateValue] = useState('')
 
   // 스트리밍 중 auto-scroll: content 변경 + 100ms interval(무응답 구간 대응)
   const runningStep = workflowSteps.find((s) => s.status === 'running')
@@ -670,14 +671,17 @@ export const WorkspaceCenterPanel = ({
 
                     {workflowTemplates && workflowTemplates.length > 0 && (
                       <select
+                        value={loadTemplateValue}
                         onChange={(e) => {
-                          if (e.target.value) onLoadWorkflowTemplate?.(e.target.value)
-                          e.target.value = ''
+                          const id = e.target.value
+                          if (id) {
+                            onLoadWorkflowTemplate?.(id)
+                            setLoadTemplateValue('')
+                          }
                         }}
-                        defaultValue=""
                         className="px-2 py-1 text-xs border rounded bg-white"
                       >
-                        <option value="" disabled>Load Template...</option>
+                        <option value="">Load Template...</option>
                         {workflowTemplates.map((t) => (
                           <option key={t.id} value={t.id}>{t.name} ({t.steps.length} steps)</option>
                         ))}
