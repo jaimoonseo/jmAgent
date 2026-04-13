@@ -74,7 +74,8 @@ interface WorkspaceCenterPanelProps {
   onToggleAllBatchFiles?: () => void
   onBatchTemplateChange?: (templateId: string) => void
   onBatchConcurrencyChange?: (n: number) => void
-  onRunBatch?: () => void
+  onRunBatch?: (resume?: boolean) => void
+  onClearBatchProgress?: () => void
 }
 
 export const WorkspaceCenterPanel = ({
@@ -133,6 +134,7 @@ export const WorkspaceCenterPanel = ({
   onBatchTemplateChange,
   onBatchConcurrencyChange,
   onRunBatch,
+  onClearBatchProgress,
 }: WorkspaceCenterPanelProps) => {
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const streamingPreRef = useRef<HTMLPreElement>(null)
@@ -826,24 +828,48 @@ export const WorkspaceCenterPanel = ({
             {/* Batch Progress */}
             {batchProgress && batchProgress.length > 0 && (
               <div className="space-y-1">
-                <h3 className="text-sm font-semibold text-slate-700">Progress</h3>
+                <div className="flex items-center justify-between">
+                  <h3 className="text-sm font-semibold text-slate-700">
+                    Job Progress
+                    <span className="ml-2 font-normal text-slate-500 text-xs">
+                      {batchProgress.filter((p) => p.status === 'done').length}/{batchProgress.length} done
+                      {batchProgress.some((p) => p.status === 'error') &&
+                        ` · ${batchProgress.filter((p) => p.status === 'error').length} failed`
+                      }
+                    </span>
+                  </h3>
+                  <button
+                    onClick={onClearBatchProgress}
+                    disabled={isBatchRunning}
+                    className="text-xs text-slate-400 hover:text-red-500 disabled:opacity-40"
+                  >
+                    Clear
+                  </button>
+                </div>
                 <div className="max-h-64 overflow-y-auto border rounded divide-y">
                   {batchProgress.map((p, idx) => (
                     <div
                       key={idx}
-                      className={`flex items-center justify-between px-2 py-1.5 text-xs ${
+                      className={`flex items-center gap-2 px-2 py-1.5 text-xs ${
                         p.status === 'done' ? 'bg-green-50' :
                         p.status === 'running' ? 'bg-blue-50' :
                         p.status === 'error' ? 'bg-red-50' : 'bg-white'
                       }`}
                     >
-                      <span className="font-mono truncate flex-1" title={p.file}>
-                        {p.file.split('/').pop()}
+                      {/* Checkbox indicator */}
+                      <span className="flex-shrink-0 w-4 text-center">
+                        {p.status === 'done' && <span className="text-green-600">✓</span>}
+                        {p.status === 'running' && <span className="text-blue-500">▶</span>}
+                        {p.status === 'error' && <span className="text-red-500">✗</span>}
+                        {p.status === 'pending' && <span className="text-slate-300">○</span>}
                       </span>
-                      <span className="flex-shrink-0 ml-2">
-                        {p.status === 'pending' && <span className="text-slate-400">Waiting</span>}
+                      <span className="font-mono truncate flex-1" title={p.file}>
+                        {p.file}
+                      </span>
+                      <span className="flex-shrink-0 text-right">
+                        {p.status === 'pending' && <span className="text-slate-400">-</span>}
                         {p.status === 'running' && (
-                          <span className="text-blue-600">Step {p.currentStep}/{p.totalSteps}</span>
+                          <span className="text-blue-600">{p.currentStep}/{p.totalSteps}</span>
                         )}
                         {p.status === 'done' && <span className="text-green-600">Done</span>}
                         {p.status === 'error' && (
@@ -853,20 +879,12 @@ export const WorkspaceCenterPanel = ({
                     </div>
                   ))}
                 </div>
-                {!isBatchRunning && batchProgress.length > 0 && (
-                  <div className="text-xs text-slate-500">
-                    {batchProgress.filter((p) => p.status === 'done').length}/{batchProgress.length} completed
-                    {batchProgress.some((p) => p.status === 'error') &&
-                      `, ${batchProgress.filter((p) => p.status === 'error').length} failed`
-                    }
-                  </div>
-                )}
               </div>
             )}
           </div>
 
           {/* Run Batch Button */}
-          <div className="p-3 border-t flex-shrink-0">
+          <div className="p-3 border-t flex-shrink-0 space-y-2">
             <div className="flex gap-2">
               <select
                 value={model}
@@ -879,13 +897,24 @@ export const WorkspaceCenterPanel = ({
                 <option value="opus">Opus</option>
               </select>
               <button
-                onClick={onRunBatch}
+                onClick={() => onRunBatch?.(false)}
                 disabled={isBatchRunning || !batchTemplateId || (batchSelectedFiles?.size || 0) === 0}
                 className="flex-1 px-3 py-2 bg-orange-600 hover:bg-orange-700 text-white rounded text-sm font-medium disabled:bg-slate-400"
               >
-                {isBatchRunning ? 'Running Batch...' : `Run Batch (${batchSelectedFiles?.size || 0} files)`}
+                {isBatchRunning ? 'Running...' : `Run Batch (${batchSelectedFiles?.size || 0} files)`}
               </button>
             </div>
+            {/* Resume button: shown when there's prior progress with incomplete files */}
+            {!isBatchRunning && batchProgress && batchProgress.length > 0 &&
+              batchProgress.some((p) => p.status !== 'done') && (
+              <button
+                onClick={() => onRunBatch?.(true)}
+                disabled={!batchTemplateId}
+                className="w-full px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded text-sm font-medium disabled:bg-slate-400"
+              >
+                Resume ({batchProgress.filter((p) => p.status !== 'done').length} remaining)
+              </button>
+            )}
           </div>
         </div>
       )}

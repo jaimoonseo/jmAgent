@@ -102,6 +102,7 @@ export const ProjectWorkspacePage = () => {
     error?: string
   }>>([])
   const [batchConcurrency, setBatchConcurrency] = useState(1)
+  const [batchJobId, setBatchJobId] = useState<string>('')  // unique ID per batch run
 
   const { sendChatStream } = useChatStream()
 
@@ -213,6 +214,38 @@ export const ProjectWorkspacePage = () => {
       console.error('Failed to load workflow templates:', e)
     }
   }, [])
+
+  // Load last batch progress from localStorage on mount
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem('jmAgent:batch:progress')
+      if (saved) {
+        const { jobId, progress, folder, templateId } = JSON.parse(saved)
+        setBatchJobId(jobId || '')
+        setBatchProgress(progress || [])
+        if (folder) setBatchFolder(folder)
+        if (templateId) setBatchTemplateId(templateId)
+      }
+    } catch (e) {
+      console.error('Failed to load batch progress:', e)
+    }
+  }, [])
+
+  // Save batch progress to localStorage whenever it changes
+  useEffect(() => {
+    if (batchProgress.length === 0) return
+    try {
+      localStorage.setItem('jmAgent:batch:progress', JSON.stringify({
+        jobId: batchJobId,
+        progress: batchProgress,
+        folder: batchFolder,
+        templateId: batchTemplateId,
+        savedAt: Date.now(),
+      }))
+    } catch (e) {
+      console.error('Failed to save batch progress:', e)
+    }
+  }, [batchProgress])
 
   // Auto-save workspace state
   useEffect(() => {
@@ -1386,35 +1419,66 @@ Code generation rules
     }
   }
 
-  const handleRunBatch = async () => {
+  const handleRunBatch = async (resume = false) => {
     const template = workflowTemplates.find((t) => t.id === batchTemplateId)
     if (!template) {
       toast.error('Select a workflow template')
       return
     }
 
-    const selectedPaths = Array.from(batchSelectedFiles).filter((p) =>
-      getFilteredBatchFiles().some((f) => f.path === p)
-    )
+    // Build full file list: resume uses existing progress, fresh run uses selection
+    let allPaths: string[]
+    if (resume && batchProgress.length > 0) {
+      // Resume: keep all files from previous run, skip done ones
+      allPaths = batchProgress.map((p) => p.file)
+    } else {
+      // Fresh run: use current selection
+      allPaths = Array.from(batchSelectedFiles).filter((p) =>
+        getFilteredBatchFiles().some((f) => f.path === p)
+      )
+      if (allPaths.length === 0) {
+        toast.error('No files selected')
+        return
+      }
+    }
 
-    if (selectedPaths.length === 0) {
-      toast.error('No files selected')
+    const newJobId = resume && batchJobId ? batchJobId : Date.now().toString()
+    setBatchJobId(newJobId)
+    setIsBatchRunning(true)
+
+    // Initialize progress: resume keeps existing done/error status, fresh resets all to pending
+    setBatchProgress(allPaths.map((p) => {
+      if (resume) {
+        const existing = batchProgress.find((bp) => bp.file === p)
+        // Keep done, reset running→pending, keep error as-is for visibility
+        if (existing?.status === 'done') return existing
+        return { file: p, status: 'pending' as const, totalSteps: template.steps.length }
+      }
+      return { file: p, status: 'pending' as const, totalSteps: template.steps.length }
+    }))
+
+    // Queue: skip already done files when resuming
+    const queue = allPaths.filter((p) => {
+      if (!resume) return true
+      const existing = batchProgress.find((bp) => bp.file === p)
+      return existing?.status !== 'done'
+    })
+
+    const doneCount = allPaths.length - queue.length
+    if (resume && doneCount > 0) {
+      toast.success(`Resuming: skipping ${doneCount} completed file(s)`)
+    }
+
+    if (queue.length === 0) {
+      toast.success('All files already completed!')
+      setIsBatchRunning(false)
       return
     }
 
-    setIsBatchRunning(true)
-    setBatchProgress(selectedPaths.map((p) => ({
-      file: p,
-      status: 'pending',
-      totalSteps: template.steps.length,
-    })))
-
-    // Run in parallel batches of batchConcurrency
-    const queue = [...selectedPaths]
     const runNext = async () => {
       while (queue.length > 0) {
         const filePath = queue.shift()!
-        const fileIndex = selectedPaths.indexOf(filePath)
+        const fileIndex = allPaths.indexOf(filePath)
         try {
           await executeBatchForFile(filePath, template.steps, fileIndex)
           setBatchProgress((prev) =>
@@ -1429,11 +1493,18 @@ Code generation rules
       }
     }
 
-    const workers = Array.from({ length: Math.min(batchConcurrency, selectedPaths.length) }, () => runNext())
+    const workers = Array.from({ length: Math.min(batchConcurrency, queue.length) }, () => runNext())
     await Promise.all(workers)
 
     setIsBatchRunning(false)
-    toast.success(`Batch complete: ${selectedPaths.length} files processed`)
+    toast.success(`Batch complete: ${queue.length} file(s) processed`)
+  }
+
+  const handleClearBatchProgress = () => {
+    setBatchProgress([])
+    setBatchJobId('')
+    localStorage.removeItem('jmAgent:batch:progress')
+    toast.success('Batch progress cleared')
   }
 
   return (
@@ -1551,6 +1622,7 @@ Code generation rules
         onBatchTemplateChange={setBatchTemplateId}
         onBatchConcurrencyChange={setBatchConcurrency}
         onRunBatch={handleRunBatch}
+        onClearBatchProgress={handleClearBatchProgress}
       />
 
       <WorkspaceRightPanel
