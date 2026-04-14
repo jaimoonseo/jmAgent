@@ -65,8 +65,10 @@ interface WorkspaceCenterPanelProps {
   batchSelectedFiles?: Set<string>
   batchTemplateId?: string
   isBatchRunning?: boolean
-  batchProgress?: Array<{ file: string; status: string; currentStep?: number; totalSteps?: number; error?: string }>
+  batchProgress?: Array<{ file: string; status: string; currentStep?: number; totalSteps?: number; error?: string; startedAt?: number; finishedAt?: number }>
   batchConcurrency?: number
+  batchRunStartedAt?: number | null
+  batchRunEndedAt?: number | null
   onBatchFolderChange?: (folder: string) => void
   onBatchFileFilterChange?: (filter: string) => void
   onBatchLoadFolder?: () => void
@@ -126,6 +128,8 @@ export const WorkspaceCenterPanel = ({
   isBatchRunning,
   batchProgress,
   batchConcurrency,
+  batchRunStartedAt,
+  batchRunEndedAt,
   onBatchFolderChange,
   onBatchFileFilterChange,
   onBatchLoadFolder,
@@ -140,6 +144,7 @@ export const WorkspaceCenterPanel = ({
   const streamingPreRef = useRef<HTMLPreElement>(null)
   const [editingStepId, setEditingStepId] = useState<string | null>(null)
   const [editingStepInstruction, setEditingStepInstruction] = useState('')
+  const [now, setNow] = useState(Date.now())
   const [templateNameInput, setTemplateNameInput] = useState('')
   const [showTemplateSave, setShowTemplateSave] = useState(false)
   const [loadTemplateValue, setLoadTemplateValue] = useState('')
@@ -166,6 +171,36 @@ export const WorkspaceCenterPanel = ({
       messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
     }, 0)
   }, [messages, streamProgress, isStreaming])
+
+  // Live clock for batch elapsed timer — only ticks while batch is running
+  useEffect(() => {
+    if (!isBatchRunning) return
+    const id = setInterval(() => setNow(Date.now()), 1000)
+    return () => clearInterval(id)
+  }, [isBatchRunning])
+
+  // Batch stats helpers
+  const fmtMs = (ms: number) => {
+    const s = Math.floor(ms / 1000)
+    if (s < 60) return `${s}s`
+    const m = Math.floor(s / 60)
+    const rem = s % 60
+    return rem > 0 ? `${m}m ${rem}s` : `${m}m`
+  }
+
+  const batchStats = (() => {
+    if (!batchRunStartedAt || !batchProgress?.length) return null
+    const elapsed = (batchRunEndedAt ?? now) - batchRunStartedAt
+    const doneItems = batchProgress.filter((p) => p.status === 'done' && p.startedAt && p.finishedAt)
+    const doneCount = batchProgress.filter((p) => p.status === 'done').length
+    const total = batchProgress.length
+    const avgMs = doneItems.length > 0
+      ? doneItems.reduce((sum, p) => sum + (p.finishedAt! - p.startedAt!), 0) / doneItems.length
+      : null
+    const remaining = total - doneCount - batchProgress.filter((p) => p.status === 'error').length
+    const etaMs = avgMs && remaining > 0 ? avgMs * remaining / (batchConcurrency || 1) : null
+    return { elapsed, doneCount, total, avgMs, etaMs }
+  })()
 
   return (
     <div className="flex-1 flex flex-col bg-white min-w-0">
@@ -201,6 +236,37 @@ export const WorkspaceCenterPanel = ({
         >
           Batch
         </button>
+        {/* Batch stats — shown in the tab bar when batch has activity */}
+        {centerTab === 'batch' && batchStats && (
+          <div className="ml-auto flex items-center gap-3 px-3 text-xs text-slate-500">
+            <span className={`font-mono font-semibold ${isBatchRunning ? 'text-orange-600' : 'text-slate-600'}`}>
+              ⏱ {fmtMs(batchStats.elapsed)}
+            </span>
+            <span className="text-slate-400">|</span>
+            <span>
+              <span className="font-semibold text-green-600">{batchStats.doneCount}</span>
+              <span className="text-slate-400">/{batchStats.total}</span>
+            </span>
+            {batchStats.avgMs !== null && (
+              <>
+                <span className="text-slate-400">|</span>
+                <span>avg <span className="font-mono text-slate-700">{fmtMs(batchStats.avgMs)}</span>/file</span>
+              </>
+            )}
+            {batchStats.etaMs !== null && isBatchRunning && (
+              <>
+                <span className="text-slate-400">|</span>
+                <span>ETA <span className="font-mono text-blue-600">{fmtMs(batchStats.etaMs)}</span></span>
+              </>
+            )}
+            {!isBatchRunning && batchRunEndedAt && batchRunStartedAt && (
+              <>
+                <span className="text-slate-400">|</span>
+                <span className="text-slate-500">완료</span>
+              </>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Chat Tab */}
@@ -875,12 +941,24 @@ export const WorkspaceCenterPanel = ({
                         <span className="font-mono truncate flex-1" title={p.file}>
                           {p.file}
                         </span>
-                        <span className="flex-shrink-0 text-right">
+                        <span className="flex-shrink-0 text-right flex items-center gap-1.5">
                           {p.status === 'pending' && <span className="text-slate-400">-</span>}
                           {p.status === 'running' && (
-                            <span className="text-blue-600">{p.currentStep}/{p.totalSteps}</span>
+                            <>
+                              <span className="text-blue-600">{p.currentStep}/{p.totalSteps}</span>
+                              {p.startedAt && (
+                                <span className="text-slate-400 font-mono">{fmtMs(now - p.startedAt)}</span>
+                              )}
+                            </>
                           )}
-                          {p.status === 'done' && <span className="text-green-600">Done</span>}
+                          {p.status === 'done' && (
+                            <>
+                              <span className="text-green-600">Done</span>
+                              {p.startedAt && p.finishedAt && (
+                                <span className="text-slate-400 font-mono">{fmtMs(p.finishedAt - p.startedAt)}</span>
+                              )}
+                            </>
+                          )}
                           {p.status === 'error' && <span className="text-red-600">Failed</span>}
                         </span>
                       </div>

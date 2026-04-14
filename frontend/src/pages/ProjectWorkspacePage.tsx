@@ -4,9 +4,62 @@ import { WorkspaceLeftPanel } from '@/components/WorkspaceLeftPanel'
 import { WorkspaceCenterPanel } from '@/components/WorkspaceCenterPanel'
 import { WorkspaceRightPanel } from '@/components/WorkspaceRightPanel'
 import { useChatStream } from '@/hooks/useChatStream'
+import { useAuthStore } from '@/store/authStore'
+import { API_BASE_URL } from '@/utils/constants'
 import type { FileInfo } from '@/types/files'
 import type { Model, ChatMessage } from '@/types/actions'
 import toast from 'react-hot-toast'
+
+// Standalone streaming fetch — each call gets its own AbortController so parallel
+// batch workers don't cancel each other (unlike useChatStream which shares one abortRef)
+const streamChatRequest = async (
+  params: { message: string; conversation_id: string; model: string; max_tokens?: number },
+): Promise<string> => {
+  const authStore = useAuthStore.getState()
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+  if (authStore.token) {
+    headers['Authorization'] = `Bearer ${authStore.token}`
+  } else if (authStore.apiKey) {
+    headers['X-API-Key'] = authStore.apiKey
+  }
+
+  const response = await fetch(`${API_BASE_URL}/agent/chat-stream`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify(params),
+  })
+
+  if (!response.ok) {
+    throw new Error(`HTTP ${response.status}: ${response.statusText}`)
+  }
+
+  const reader = response.body!.getReader()
+  const decoder = new TextDecoder()
+  let fullContent = ''
+
+  while (true) {
+    const { done, value } = await reader.read()
+    if (done) break
+
+    const chunk = decoder.decode(value, { stream: true })
+    for (const line of chunk.split('\n')) {
+      if (!line.startsWith('data: ')) continue
+      const eventStr = line.slice(6).trim()
+      if (!eventStr) continue
+      const data = JSON.parse(eventStr)
+      if (data.type === 'token' && data.content) {
+        fullContent += data.content
+      } else if (data.type === 'complete') {
+        if (data.response) fullContent = data.response
+        return fullContent
+      } else if (data.type === 'error') {
+        throw new Error(data.message || 'Stream error')
+      }
+    }
+  }
+
+  return fullContent
+}
 
 // Shared skill content cleaner — removes FILE_CREATE format artifacts
 const cleanSkillContent = (content: string): string => {
@@ -123,9 +176,13 @@ export const ProjectWorkspacePage = () => {
     currentStep?: number
     totalSteps?: number
     error?: string
+    startedAt?: number
+    finishedAt?: number
   }>>([])
   const [batchConcurrency, setBatchConcurrency] = useState(1)
   const [batchJobId, setBatchJobId] = useState<string>('')  // unique ID per batch run
+  const [batchRunStartedAt, setBatchRunStartedAt] = useState<number | null>(null)
+  const [batchRunEndedAt, setBatchRunEndedAt] = useState<number | null>(null)
 
   const { sendChatStream } = useChatStream()
 
@@ -1378,16 +1435,12 @@ Code generation rules
       const stepMessage = skillPrefix + contextPrefix + step.instruction + fileFormatInstruction
       const stepConversationId = `batch-${Date.now()}-${fileIndex}-${i}`
 
-      const result = await sendChatStream({
+      const content = await streamChatRequest({
         message: stepMessage,
         conversation_id: stepConversationId,
         model,
         max_tokens: 8192,
       })
-
-      if (!result) throw new Error('Stream cancelled')
-
-      const { content } = result
       const { codeBlocks } = extractCodeBlocks(content)
 
       if (codeBlocks.length > 0 && projectRoot) {
@@ -1439,6 +1492,8 @@ Code generation rules
     const newJobId = resume && batchJobId ? batchJobId : Date.now().toString()
     setBatchJobId(newJobId)
     setIsBatchRunning(true)
+    setBatchRunStartedAt(Date.now())
+    setBatchRunEndedAt(null)
 
     // Initialize progress: resume keeps existing done/error status, fresh resets all to pending
     setBatchProgress(allPaths.map((p) => {
@@ -1473,30 +1528,39 @@ Code generation rules
       while (queue.length > 0) {
         const filePath = queue.shift()!
         const fileIndex = allPaths.indexOf(filePath)
+        const fileStartedAt = Date.now()
+        setBatchProgress((prev) =>
+          prev.map((p) => p.file === filePath ? { ...p, startedAt: fileStartedAt } : p)
+        )
         try {
           await executeBatchForFile(filePath, template.steps, fileIndex)
+          const fileFinishedAt = Date.now()
           setBatchProgress((prev) =>
-            prev.map((p) => p.file === filePath ? { ...p, status: 'done', currentStep: template.steps.length } : p)
+            prev.map((p) => p.file === filePath ? { ...p, status: 'done', currentStep: template.steps.length, finishedAt: fileFinishedAt } : p)
           )
         } catch (error) {
           const errorMsg = error instanceof Error ? error.message : 'Unknown error'
           setBatchProgress((prev) =>
-            prev.map((p) => p.file === filePath ? { ...p, status: 'error', error: errorMsg } : p)
+            prev.map((p) => p.file === filePath ? { ...p, status: 'error', error: errorMsg, finishedAt: Date.now() } : p)
           )
         }
       }
     }
 
+    const totalQueued = queue.length
     const workers = Array.from({ length: Math.min(batchConcurrency, queue.length) }, () => runNext())
     await Promise.all(workers)
 
+    setBatchRunEndedAt(Date.now())
     setIsBatchRunning(false)
-    toast.success(`Batch complete: ${queue.length} file(s) processed`)
+    toast.success(`Batch complete: ${totalQueued} file(s) processed`)
   }
 
   const handleClearBatchProgress = () => {
     setBatchProgress([])
     setBatchJobId('')
+    setBatchRunStartedAt(null)
+    setBatchRunEndedAt(null)
     localStorage.removeItem('jmAgent:batch:progress')
     toast.success('Batch progress cleared')
   }
@@ -1613,6 +1677,8 @@ Code generation rules
         onToggleAllBatchFiles={handleToggleAllBatchFiles}
         onBatchTemplateChange={setBatchTemplateId}
         onBatchConcurrencyChange={setBatchConcurrency}
+        batchRunStartedAt={batchRunStartedAt}
+        batchRunEndedAt={batchRunEndedAt}
         onRunBatch={handleRunBatch}
         onClearBatchProgress={handleClearBatchProgress}
       />
