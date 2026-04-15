@@ -1,0 +1,35 @@
+services:
+
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    env_file: .env
+    volumes:
+      # SQLite audit log — persists across container restarts
+      - ./data/audit.db:/app/audit.db
+      # User-created templates and plugins live here
+      - ./data/templates:/app/data/templates
+      - ./data/plugins:/app/data/plugins
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python3", "-c",
+             "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/v1/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        # Relative URL — nginx in this container proxies /api/ → backend
+        VITE_API_BASE_URL: /api/v1
+    ports:
+      - "80:80"
+    depends_on:
+      backend:
+        condition: service_healthy
+    restart: unless-stopped

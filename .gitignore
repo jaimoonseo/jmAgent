@@ -91,3 +91,6 @@ temp/
 .github/workflows/*.yml.bak
 .gitlab-ci.yml.bak
 .env
+
+# Docker runtime data (volumes)
+data/
